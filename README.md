@@ -140,7 +140,7 @@ volumes:
 > versus **118 MB** uncapped.
 >
 > **Image tags:** `latest` tracks `main`. For a stable deployment, pin a release tag such as
-> `ghcr.io/pigontech/inkvoice:0.1.0`.
+> `ghcr.io/pigontech/inkvoice:0.3.0`.
 >
 > **Going public?** Put it behind HTTPS and add `-e COOKIE_SECURE=true -e ENABLE_HSTS=true`.
 > Staying on plain HTTP? Add `-e COOKIE_SECURE=false`. It defaults to true, which marks the

@@ -14,7 +14,7 @@ Inkvoice is an [official Dokploy template](https://dokploy.com/templates/inkvoic
 
 The catalog template ships `COOKIE_SECURE=false` so login works on Dokploy's auto-generated HTTP domain. After you attach an HTTPS custom domain, set `COOKIE_SECURE=true` and `ENABLE_HSTS=true`.
 
-The catalog currently pins `ghcr.io/pigontech/inkvoice:0.1.0`. Bump the image tag in the Compose service if you want a newer release.
+The catalog template pins a specific release tag, which can trail the newest release. Check the image tag in the Compose service and bump it if it is behind.
 
 To deploy a fork or a custom tag instead of the catalog template, add a Compose/Docker service from this repo, expose port `3000`, mount `/app/data`, and set:
 
