@@ -24,6 +24,7 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { type Language, languages, useTranslation } from "@/i18n";
+import { CURRENCIES } from "@/lib/constants";
 import { formatApiError } from "@/lib/format-api-error";
 import { moneyDecimals } from "@/lib/utils";
 import ProductSettings from "@/pages/ProductSettings";
@@ -392,14 +393,11 @@ export default function Settings() {
                     onChange={(e) => setSettings({ ...settings, currency: e.target.value })}
                     className="form-select"
                   >
-                    <option value="USD">USD</option>
-                    <option value="EUR">EUR</option>
-                    <option value="GBP">GBP</option>
-                    <option value="TRY">TRY</option>
-                    <option value="JPY">JPY</option>
-                    <option value="CAD">CAD</option>
-                    <option value="AUD">AUD</option>
-                    <option value="CHF">CHF</option>
+                    {CURRENCIES.map(({ code }) => (
+                      <option key={code} value={code}>
+                        {code}
+                      </option>
+                    ))}
                   </select>
                 </FormField>
                 <FormField label={t("settings.locale")} hint={t("settings.locale_hint")}>
@@ -420,7 +418,7 @@ export default function Settings() {
                     onChange={(e) => setSettings({ ...settings, base_currency: e.target.value })}
                     className="form-select"
                   >
-                    {["USD", "EUR", "GBP", "TRY", "JPY", "CAD", "AUD", "CHF"].map((code) => (
+                    {CURRENCIES.map(({ code }) => (
                       <option key={code} value={code}>
                         {code}
                       </option>

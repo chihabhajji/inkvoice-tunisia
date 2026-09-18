@@ -21,7 +21,7 @@ import {
 import { Textarea } from "@/components/ui/textarea";
 import { isEmail, maxLength, required, useFormValidation } from "@/hooks/use-form-validation";
 import { useTranslation } from "@/i18n";
-import { STATUS_COLORS } from "@/lib/constants";
+import { CURRENCIES, STATUS_COLORS } from "@/lib/constants";
 import { COUNTRIES } from "@/lib/countries";
 import { formatApiError } from "@/lib/format-api-error";
 import { markRowHighlight } from "@/lib/highlight-row";
@@ -369,7 +369,7 @@ export default function CustomerForm({ onSave }: Props) {
                   className="form-select"
                 >
                   <option value="">{t("customers.default_currency_inherit")}</option>
-                  {["USD", "EUR", "GBP", "TRY", "JPY", "CAD", "AUD", "CHF"].map((code) => (
+                  {CURRENCIES.map(({ code }) => (
                     <option key={code} value={code}>
                       {code}
                     </option>
