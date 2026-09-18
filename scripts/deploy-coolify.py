@@ -11,7 +11,7 @@ for _ in range(120):
     try:
         request = urllib.request.Request(
             "https://accounting.washere.cloud/health",
-            headers={"Cache-Control": "no-cache"},
+            headers={"Cache-Control": "no-cache", "Accept": "application/json", "User-Agent": "Inkvoice-Tunisia-Deploy/1.0"},
         )
         with urllib.request.urlopen(request, timeout=15) as response:
             health = json.load(response)
