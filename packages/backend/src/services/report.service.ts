@@ -1,5 +1,6 @@
 import { getDb } from "../database/connection";
 import { todayIso } from "../utils/date";
+import { moneyDecimals } from "../utils/money";
 import { getBaseCurrency } from "./exchange-rate.service";
 
 interface DateRangeParams {
@@ -137,7 +138,7 @@ export function getRevenueByCustomer(params: DateRangeParams) {
     .query(
       `SELECT c.name as customer_name, COUNT(*) as invoice_count,
               SUM(i.amount_paid * COALESCE(i.exchange_rate, 1)) as total_revenue,
-              ROUND(SUM(i.amount_paid * COALESCE(i.exchange_rate, 1)) * 1.0 / COUNT(*), 2) as average_invoice
+              ROUND(SUM(i.amount_paid * COALESCE(i.exchange_rate, 1)) * 1.0 / COUNT(*), ${moneyDecimals(getBaseCurrency())}) as average_invoice
        FROM invoices i
        JOIN customers c ON i.customer_id = c.id
        ${where}
@@ -183,7 +184,7 @@ export function getRevenueByProduct(params: DateRangeParams): {
       `SELECT COALESCE(p.name, ii.description) as product_name,
               SUM(ii.quantity) as quantity_sold,
               SUM(ii.line_total * COALESCE(i.exchange_rate, 1)) as total_revenue,
-              ROUND(SUM(ii.line_total * COALESCE(i.exchange_rate, 1)) * 1.0 / SUM(ii.quantity), 2) as average_price
+              ROUND(SUM(ii.line_total * COALESCE(i.exchange_rate, 1)) * 1.0 / SUM(ii.quantity), ${moneyDecimals(getBaseCurrency())}) as average_price
        FROM invoice_items ii
        JOIN invoices i ON ii.invoice_id = i.id
        LEFT JOIN products p ON ii.product_id = p.id

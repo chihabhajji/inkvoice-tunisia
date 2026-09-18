@@ -16,6 +16,8 @@ import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 import { markRowHighlight } from "@/lib/highlight-row";
 import { pushRecentlyViewed } from "@/lib/recently-viewed";
+import { moneyDecimals } from "@/lib/utils";
+import { useSettingsStore } from "@/stores/settings.store";
 
 interface Props {
   onSave: () => void;
@@ -26,6 +28,7 @@ export default function ProductForm({ onSave }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
+  const currency = useSettingsStore((s) => s.settings.currency);
   const isEdit = !!id && id !== "new";
   // Set when arriving via "Add product" from another page (e.g. the invoice
   // form): pre-fill the name and return to the caller on save.
@@ -188,7 +191,7 @@ export default function ProductForm({ onSave }: Props) {
               <NumberInput
                 value={form.unit_price}
                 min={0}
-                decimals={2}
+                decimals={moneyDecimals(currency)}
                 onValueChange={(v) => {
                   const newForm = { ...form, unit_price: v };
                   setForm(newForm);

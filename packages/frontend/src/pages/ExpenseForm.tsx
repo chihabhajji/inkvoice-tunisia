@@ -18,6 +18,7 @@ import { useTranslation } from "@/i18n";
 import { toLocalIsoDate } from "@/lib/date";
 import { formatApiError } from "@/lib/format-api-error";
 import { markRowHighlight } from "@/lib/highlight-row";
+import { moneyDecimals } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings.store";
 
 interface Props {
@@ -258,7 +259,7 @@ export default function ExpenseForm({ onSave }: Props) {
               <NumberInput
                 value={form.amount}
                 min={0}
-                decimals={2}
+                decimals={moneyDecimals(form.currency)}
                 onValueChange={(v) => {
                   const newForm = { ...form, amount: v };
                   setForm(newForm);

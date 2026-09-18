@@ -88,8 +88,11 @@ publicRoutes.get("/invoices/:shareToken", (c) => {
       },
       // `payment_methods` lists every enabled gateway; `stripe_enabled` is kept
       // for backward compatibility with older public-page bundles.
-      payment_methods: listEnabledGatewayMeta(),
-      stripe_enabled: isStripeConfigured() && getSetting("stripe_enabled") === "true",
+      payment_methods: invoice.currency.toUpperCase() === "TND" ? [] : listEnabledGatewayMeta(),
+      stripe_enabled:
+        invoice.currency.toUpperCase() !== "TND" &&
+        isStripeConfigured() &&
+        getSetting("stripe_enabled") === "true",
     },
   });
 });
@@ -108,6 +111,15 @@ publicRoutes.post("/invoices/:shareToken/pay", async (c) => {
   const shareToken = c.req.param("shareToken");
   const invoice = invoiceService.getInvoiceByShareToken(shareToken);
   if (!invoice) return c.json({ success: false, error: "Invoice not found" }, 404);
+  if (invoice.currency.toUpperCase() === "TND")
+    return c.json(
+      {
+        success: false,
+        error:
+          "TND requires manual payment; online gateways do not support millimes in this instance.",
+      },
+      400,
+    );
   if (invoice.status === "paid")
     return c.json({ success: false, error: "Invoice already paid" }, 400);
   if (invoice.status === "voided")

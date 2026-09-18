@@ -16,7 +16,12 @@ import {
   generateInvoiceNumber,
   isDraftNumber,
 } from "../utils/invoice-number";
-import { calculateInvoiceTotals, calculateLineItem } from "../utils/tax-calculator";
+import { roundMoney } from "../utils/money";
+import {
+  calculateInvoiceTotals,
+  calculateLineItem,
+  calculateLineItemTaxInclusive,
+} from "../utils/tax-calculator";
 import { maybeAutoTransmit } from "./einvoice-transport.service";
 import { getBaseCurrency } from "./exchange-rate.service";
 import { applyLateFees } from "./late-fee.service";
@@ -62,6 +67,7 @@ interface CreateInvoiceData {
   notes?: string | null;
   payment_terms?: string | null;
   currency?: string;
+  prices_include_tax?: boolean;
   exchange_rate?: number;
   discount_type?: string | null;
   discount_value?: number;
@@ -309,9 +315,20 @@ export function createInvoice(data: CreateInvoiceData): InvoiceWithItems {
     const itemInputs = data.items.map((item) => ({
       quantity: item.quantity,
       unit_price: item.unit_price,
-      tax_rate: item.tax_rate ?? 0,
+      tax_rate: item.tax_id
+        ? ((
+            db.query("SELECT rate FROM tax_definitions WHERE id = ?").get(item.tax_id) as {
+              rate: number;
+            } | null
+          )?.rate ??
+          item.tax_rate ??
+          0)
+        : (item.tax_rate ?? 0),
     }));
-    const totals = calculateInvoiceTotals(itemInputs, data.discount_type, data.discount_value);
+    const totals = calculateInvoiceTotals(itemInputs, data.discount_type, data.discount_value, {
+      currency: data.currency,
+      pricesIncludeTax: data.prices_include_tax,
+    });
 
     db.run(
       `INSERT INTO invoices (id, invoice_number, customer_id, status, type, reference_invoice_id,
@@ -352,21 +369,17 @@ export function createInvoice(data: CreateInvoiceData): InvoiceWithItems {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
-    for (const item of data.items) {
+    for (const [index, item] of data.items.entries()) {
       const itemId = crypto.randomBytes(16).toString("hex");
-      // Resolve tax rate from definition if tax_id is provided
-      let taxRate = item.tax_rate ?? 0;
-      if (item.tax_id) {
-        const taxDef = db
-          .query("SELECT rate FROM tax_definitions WHERE id = ?")
-          .get(item.tax_id) as { rate: number } | null;
-        if (taxDef) taxRate = taxDef.rate;
-      }
-      const calc = calculateLineItem({
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        tax_rate: taxRate,
-      });
+      const taxRate = itemInputs[index].tax_rate;
+      const calc = (data.prices_include_tax ? calculateLineItemTaxInclusive : calculateLineItem)(
+        {
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: taxRate,
+        },
+        data.currency,
+      );
       itemStmt.run(
         itemId,
         invoiceId,
@@ -383,6 +396,10 @@ export function createInvoice(data: CreateInvoiceData): InvoiceWithItems {
       );
     }
 
+    db.run("UPDATE invoices SET prices_include_tax = ? WHERE id = ?", [
+      data.prices_include_tax ? 1 : 0,
+      invoiceId,
+    ]);
     return invoiceId;
   })();
 
@@ -404,9 +421,20 @@ export function updateInvoice(id: string, data: CreateInvoiceData): InvoiceWithI
     const itemInputs = data.items.map((item) => ({
       quantity: item.quantity,
       unit_price: item.unit_price,
-      tax_rate: item.tax_rate ?? 0,
+      tax_rate: item.tax_id
+        ? ((
+            db.query("SELECT rate FROM tax_definitions WHERE id = ?").get(item.tax_id) as {
+              rate: number;
+            } | null
+          )?.rate ??
+          item.tax_rate ??
+          0)
+        : (item.tax_rate ?? 0),
     }));
-    const totals = calculateInvoiceTotals(itemInputs, data.discount_type, data.discount_value);
+    const totals = calculateInvoiceTotals(itemInputs, data.discount_type, data.discount_value, {
+      currency: data.currency,
+      pricesIncludeTax: data.prices_include_tax,
+    });
 
     db.run(
       `UPDATE invoices SET customer_id = ?, issue_date = ?, due_date = ?,
@@ -445,13 +473,17 @@ export function updateInvoice(id: string, data: CreateInvoiceData): InvoiceWithI
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
-    for (const item of data.items) {
+    for (const [index, item] of data.items.entries()) {
       const itemId = crypto.randomBytes(16).toString("hex");
-      const calc = calculateLineItem({
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        tax_rate: item.tax_rate ?? 0,
-      });
+      const taxRate = itemInputs[index].tax_rate;
+      const calc = (data.prices_include_tax ? calculateLineItemTaxInclusive : calculateLineItem)(
+        {
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: taxRate,
+        },
+        data.currency,
+      );
       itemStmt.run(
         itemId,
         id,
@@ -461,12 +493,16 @@ export function updateInvoice(id: string, data: CreateInvoiceData): InvoiceWithI
         item.unit_price,
         item.unit || "piece",
         item.tax_id || null,
-        item.tax_rate ?? 0,
+        taxRate,
         calc.tax_amount,
         calc.line_total,
         item.sort_order ?? 0,
       );
     }
+    db.run("UPDATE invoices SET prices_include_tax = ? WHERE id = ?", [
+      data.prices_include_tax ? 1 : 0,
+      id,
+    ]);
   })();
 
   if (data.tags) setItemTags(id, "invoice", data.tags);
@@ -724,6 +760,7 @@ export function duplicateInvoice(id: string): InvoiceWithItems | null {
     notes: existing.notes,
     payment_terms: existing.payment_terms,
     currency: existing.currency,
+    prices_include_tax: existing.prices_include_tax === 1,
     locale: existing.locale,
     discount_type: existing.discount_type,
     discount_value: existing.discount_value,
@@ -747,10 +784,6 @@ export interface CreateConsolidatedData {
   invoice_ids: string[];
   discount_type?: string | null;
   discount_value?: number;
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 /**
@@ -811,6 +844,7 @@ export function createConsolidated(data: CreateConsolidatedData): InvoiceWithIte
   });
 
   const currency = sources[0].currency;
+  const round = (n: number) => roundMoney(n, currency);
   for (const source of sources) {
     if (source.currency !== currency) {
       throw new HttpError(
@@ -843,16 +877,16 @@ export function createConsolidated(data: CreateConsolidatedData): InvoiceWithIte
       subtotal += item.line_total;
       taxTotal += item.tax_amount;
     }
-    subtotal = round2(subtotal);
-    taxTotal = round2(taxTotal);
+    subtotal = round(subtotal);
+    taxTotal = round(taxTotal);
 
     let discountAmount = 0;
     if (data.discount_type === "percentage" && data.discount_value) {
-      discountAmount = round2(subtotal * (Math.min(data.discount_value, 100) / 100));
+      discountAmount = round(subtotal * (Math.min(data.discount_value, 100) / 100));
     } else if (data.discount_type === "amount" && data.discount_value) {
-      discountAmount = round2(Math.min(data.discount_value, subtotal));
+      discountAmount = round(Math.min(data.discount_value, subtotal));
     }
-    const total = round2(subtotal - discountAmount + taxTotal);
+    const total = round(subtotal - discountAmount + taxTotal);
 
     const notes = `Consolidated from ${sources.map((s) => s.invoice_number).join(", ")}`;
 
@@ -957,6 +991,7 @@ export function createCreditNote(
     due_date: null,
     notes: `Credit note for invoice ${source.invoice_number}`,
     currency: source.currency,
+    prices_include_tax: source.prices_include_tax === 1,
     locale: source.locale,
     template_id: source.template_id,
     items: source.items.map((item) => ({

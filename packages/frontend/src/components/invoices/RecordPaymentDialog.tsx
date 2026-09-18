@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { useTranslation } from "@/i18n";
 import { todayIso } from "@/lib/date";
 import { formatApiError } from "@/lib/format-api-error";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, moneyDecimals, roundMoney } from "@/lib/utils";
 
 interface Props {
   open: boolean;
@@ -39,10 +39,6 @@ function addDaysIso(from: string, days: number): string {
   const d = new Date(`${from}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().split("T")[0];
-}
-
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
 }
 
 export function RecordPaymentDialog({
@@ -70,13 +66,13 @@ export function RecordPaymentDialog({
     const amount =
       cashDiscount.type === "amount"
         ? Math.min(cashDiscount.value, balanceDue)
-        : round2((balanceDue * cashDiscount.value) / 100);
+        : roundMoney((balanceDue * cashDiscount.value) / 100, currency);
     return {
       available: balanceDue > 0,
       amount,
       deadline: addDaysIso(cashDiscount.issueDate, cashDiscount.days),
     };
-  }, [cashDiscount, balanceDue]);
+  }, [cashDiscount, balanceDue, currency]);
 
   const discountEligible =
     discountInfo.available && !!discountInfo.deadline && paymentDate <= discountInfo.deadline;
@@ -92,7 +88,7 @@ export function RecordPaymentDialog({
   }, [open, balanceDue]);
 
   const discountedAmount = discountEligible
-    ? round2(Math.max(0, balanceDue - discountInfo.amount))
+    ? roundMoney(Math.max(0, balanceDue - discountInfo.amount), currency)
     : balanceDue;
 
   const handleToggleDiscount = (checked: boolean) => {
@@ -136,7 +132,12 @@ export function RecordPaymentDialog({
             label={t("record_payment.amount")}
             hint={t("record_payment.balance_due", { amount: formatCurrency(balanceDue, currency) })}
           >
-            <NumberInput value={amount} min={0.01} decimals={2} onValueChange={setAmount} />
+            <NumberInput
+              value={amount}
+              min={10 ** -moneyDecimals(currency)}
+              decimals={moneyDecimals(currency)}
+              onValueChange={setAmount}
+            />
             {amount > balanceDue && (
               <p className="text-xs text-amber-600 mt-1">{t("record_payment.exceeds_balance")}</p>
             )}
@@ -155,7 +156,7 @@ export function RecordPaymentDialog({
                     nextDate <= discountInfo.deadline;
                   setAmount(
                     stillEligible
-                      ? round2(Math.max(0, balanceDue - discountInfo.amount))
+                      ? roundMoney(Math.max(0, balanceDue - discountInfo.amount), currency)
                       : balanceDue,
                   );
                 }

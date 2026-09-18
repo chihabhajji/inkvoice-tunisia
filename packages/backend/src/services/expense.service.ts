@@ -3,6 +3,7 @@ import { getDb } from "../database/connection";
 import type { PaginatedResponse } from "../types/common";
 import type { Expense } from "../types/expense";
 import { todayIso } from "../utils/date";
+import { roundMoney } from "../utils/money";
 import { getBaseCurrency } from "./exchange-rate.service";
 import { createInvoice } from "./invoice.service";
 
@@ -24,14 +25,11 @@ interface ExpenseListParams {
   limit: number;
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 /** Resolve tax rate from a tax definition (if any) and derive tax_amount + total. */
 function deriveTotals(
   amount: number,
   taxId: string | null,
+  currency?: string,
 ): {
   tax_id: string | null;
   tax_rate: number;
@@ -50,12 +48,12 @@ function deriveTotals(
       resolvedTaxId = taxId;
     }
   }
-  const taxAmount = round2((amount * taxRate) / 100);
+  const taxAmount = roundMoney((amount * taxRate) / 100, currency);
   return {
     tax_id: resolvedTaxId,
     tax_rate: taxRate,
     tax_amount: taxAmount,
-    total: round2(amount + taxAmount),
+    total: roundMoney(amount + taxAmount, currency),
   };
 }
 
@@ -164,7 +162,11 @@ export function createExpense(data: Partial<Expense>): Expense {
   const db = getDb();
   const id = crypto.randomBytes(16).toString("hex");
   const amount = data.amount ?? 0;
-  const { tax_id, tax_rate, tax_amount, total } = deriveTotals(amount, data.tax_id || null);
+  const { tax_id, tax_rate, tax_amount, total } = deriveTotals(
+    amount,
+    data.tax_id || null,
+    data.currency,
+  );
 
   db.run(
     `INSERT INTO expenses (id, vendor, category, description, expense_date, amount, tax_id,
@@ -199,7 +201,11 @@ export function updateExpense(id: string, data: Partial<Expense>): Expense | nul
   if (!existing) return null;
 
   const amount = data.amount ?? 0;
-  const { tax_id, tax_rate, tax_amount, total } = deriveTotals(amount, data.tax_id || null);
+  const { tax_id, tax_rate, tax_amount, total } = deriveTotals(
+    amount,
+    data.tax_id || null,
+    data.currency,
+  );
 
   db.run(
     `UPDATE expenses SET vendor = ?, category = ?, description = ?, expense_date = ?, amount = ?,

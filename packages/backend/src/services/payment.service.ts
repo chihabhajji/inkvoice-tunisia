@@ -6,6 +6,7 @@ import {
   hasCashDiscount,
   isWithinCashDiscountWindow,
 } from "../utils/cash-discount";
+import { minorUnits, roundMoney } from "../utils/money";
 
 export interface Payment {
   id: string;
@@ -18,10 +19,6 @@ export interface Payment {
   created_at: string;
 }
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 export function recalculateInvoicePayments(invoiceId: string): void {
   const db = getDb();
   const row = db
@@ -29,23 +26,25 @@ export function recalculateInvoicePayments(invoiceId: string): void {
     .get(invoiceId) as { total_paid: number };
 
   const invoice = db
-    .query("SELECT total, status, cash_discount_applied FROM invoices WHERE id = ?")
+    .query("SELECT currency, total, status, cash_discount_applied FROM invoices WHERE id = ?")
     .get(invoiceId) as {
+    currency: string;
     total: number;
     status: string;
     cash_discount_applied: number;
   } | null;
   if (!invoice) return;
 
-  const amountPaid = round2(row.total_paid);
-  const discountApplied = round2(invoice.cash_discount_applied || 0);
+  const round = (n: number) => roundMoney(n, invoice.currency);
+  const amountPaid = round(row.total_paid);
+  const discountApplied = round(invoice.cash_discount_applied || 0);
   // Settled once received cash plus any early-payment discount reaches the total.
   const settled = amountPaid + discountApplied;
   let newStatus = invoice.status;
 
   // Only auto-update status for non-draft, non-voided, non-complete invoices
   if (!["draft", "voided", "complete"].includes(invoice.status)) {
-    if (settled >= invoice.total) {
+    if (minorUnits(settled, invoice.currency) >= minorUnits(invoice.total, invoice.currency)) {
       newStatus = "paid";
     } else if (amountPaid > 0) {
       newStatus = "partially_paid";
@@ -76,13 +75,14 @@ export function recordPayment(
 
   const invoice = db
     .query(
-      `SELECT id, status, total, amount_paid, issue_date, cash_discount_type,
+      `SELECT id, currency, status, total, amount_paid, issue_date, cash_discount_type,
               cash_discount_value, cash_discount_days, cash_discount_applied
        FROM invoices WHERE id = ? AND deleted_at IS NULL`,
     )
     .get(invoiceId) as {
     id: string;
     status: string;
+    currency: string;
     total: number;
     amount_paid: number;
     issue_date: string;
@@ -101,7 +101,11 @@ export function recordPayment(
   }
   if (data.amount <= 0) return { success: false, error: "Payment amount must be greater than 0" };
 
-  let effectiveAmount = data.amount;
+  const round = (n: number) => roundMoney(n, invoice.currency);
+  let effectiveAmount = invoice.currency.toUpperCase() === "TND" ? round(data.amount) : data.amount;
+  if (!Number.isFinite(effectiveAmount) || effectiveAmount <= 0) {
+    return { success: false, error: "Payment amount must be a positive finite monetary amount" };
+  }
 
   // Early-payment (cash) discount: allow settling for less than the balance on
   // condition the payment arrives inside the discount window.
@@ -111,7 +115,7 @@ export function recordPayment(
       value: invoice.cash_discount_value,
       days: invoice.cash_discount_days,
     };
-    const balance = round2(invoice.total - invoice.amount_paid - invoice.cash_discount_applied);
+    const balance = round(invoice.total - invoice.amount_paid - invoice.cash_discount_applied);
     if (!hasCashDiscount(config)) {
       return { success: false, error: "This invoice has no early-payment discount" };
     }
@@ -121,15 +125,24 @@ export function recordPayment(
     if (invoice.status === "paid") {
       return { success: false, error: "Invoice is already paid" };
     }
-    const discount = cashDiscountOn(balance, {
-      type: config.type!,
-      value: config.value!,
-      days: config.days!,
-    });
-    if (Math.abs(round2(data.amount) - round2(balance - discount)) > 0.01) {
+    const discount = cashDiscountOn(
+      balance,
+      {
+        type: config.type!,
+        value: config.value!,
+        days: config.days!,
+      },
+      invoice.currency,
+    );
+    if (
+      invoice.currency.toUpperCase() === "TND"
+        ? minorUnits(data.amount, invoice.currency) !==
+          minorUnits(balance - discount, invoice.currency)
+        : Math.abs(round(data.amount) - round(balance - discount)) > 0.01
+    ) {
       return { success: false, error: "Payment amount must equal the discounted balance" };
     }
-    effectiveAmount = round2(balance - discount);
+    effectiveAmount = round(balance - discount);
     db.run(
       "UPDATE invoices SET cash_discount_applied = cash_discount_applied + ?, updated_at = datetime('now') WHERE id = ?",
       [discount, invoiceId],

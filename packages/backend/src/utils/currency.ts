@@ -1,3 +1,4 @@
+import { HttpError } from "./http-error";
 import { logger } from "./logger";
 
 function getLocaleForNumberFormat(numberFormat?: string): string {
@@ -40,5 +41,16 @@ export function formatCurrency(
   } catch (err) {
     logger.warn({ currency, locale, err }, "Falling back on unformattable currency");
     return formatFallback(amount, currency, locale);
+  }
+}
+
+export function requireTwoDecimalCurrency(currency: string, integration: string): void {
+  if (currency.toUpperCase() === "TND") {
+    throw new HttpError(
+      400,
+      `${integration} does not support TND millimes. Use a standard invoice/PDF and record payment manually.`,
+      undefined,
+      "VALIDATION_FAILED",
+    );
   }
 }

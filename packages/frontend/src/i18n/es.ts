@@ -1196,6 +1196,8 @@ const es: TranslationKeys = {
 
   // Diseño público
   public: {
+    tnd_manual_payment:
+      "Los pagos en TND deben realizarse manualmente. Sigue las instrucciones de pago de la factura.",
     invoice: "Factura",
     quote: "Presupuesto",
     print_save_pdf: "Imprimir / Guardar PDF",

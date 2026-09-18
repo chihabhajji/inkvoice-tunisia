@@ -1,3 +1,4 @@
+import { requireTwoDecimalCurrency } from "../../utils/currency";
 import { todayIso } from "../../utils/date";
 import { getEnv } from "../../utils/env";
 import { recordPayment } from "../payment.service";
@@ -138,6 +139,7 @@ export const paypalGateway: PaymentGateway = {
   },
 
   async createCheckout(ctx: CheckoutContext): Promise<{ url: string }> {
+    requireTwoDecimalCurrency(ctx.currency, "Online payments");
     const token = await getAccessToken();
     const { ok, status, data } = await paypalFetch(
       "/v2/checkout/orders",

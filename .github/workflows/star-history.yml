@@ -28,6 +28,7 @@ concurrency:
 
 jobs:
   snapshot:
+    if: github.repository == 'pigontech/inkvoice'
     runs-on: ubuntu-latest
     permissions:
       contents: write # required solely for the snapshot commit/push below

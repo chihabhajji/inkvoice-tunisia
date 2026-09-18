@@ -41,8 +41,9 @@ import { addDaysIso, todayIso } from "@/lib/date";
 import { formatApiError } from "@/lib/format-api-error";
 import { markRowHighlight } from "@/lib/highlight-row";
 import { consumeInvoiceDraft, saveInvoiceDraft } from "@/lib/invoice-draft";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, moneyDecimals } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings.store";
+import { calculateInvoiceTotals } from "../../../backend/src/utils/tax-calculator";
 
 interface LineItem {
   _key: string;
@@ -62,6 +63,7 @@ function genKey() {
 }
 
 function SortableLineItem({
+  currency,
   id,
   item,
   index,
@@ -76,6 +78,7 @@ function SortableLineItem({
   onAddNewProduct,
   t,
 }: {
+  currency: string;
   id: string;
   item: LineItem;
   index: number;
@@ -178,7 +181,7 @@ function SortableLineItem({
           <NumberInput
             value={item.unit_price}
             min={0}
-            decimals={2}
+            decimals={moneyDecimals(currency)}
             onValueChange={(v) => onUpdateItem(index, "unit_price", v)}
             aria-invalid={!!errors[`item_${index}_unit_price`]}
           />
@@ -200,7 +203,7 @@ function SortableLineItem({
         </div>
         <div className="flex items-center gap-1">
           <span className="text-sm font-medium w-full text-right tabular-nums">
-            {formatCurrency(item.quantity * item.unit_price)}
+            {formatCurrency(item.quantity * item.unit_price, currency)}
           </span>
           <Button
             type="button"
@@ -577,30 +580,15 @@ export default function InvoiceForm({ onSave }: Props) {
     setItems(items.filter((_, i) => i !== index));
   };
 
-  // Calculate totals
-  let subtotal: number;
-  let taxTotal: number;
-  if (form.prices_include_tax) {
-    // Tax-inclusive: unit prices are gross, extract tax
-    subtotal = items.reduce((sum, item) => {
-      const gross = item.quantity * item.unit_price;
-      return sum + gross / (1 + item.tax_rate / 100);
-    }, 0);
-    taxTotal = items.reduce((sum, item) => {
-      const gross = item.quantity * item.unit_price;
-      return sum + (gross - gross / (1 + item.tax_rate / 100));
-    }, 0);
-  } else {
-    subtotal = items.reduce((sum, item) => sum + item.quantity * item.unit_price, 0);
-    taxTotal = items.reduce(
-      (sum, item) => sum + (item.quantity * item.unit_price * item.tax_rate) / 100,
-      0,
-    );
-  }
-  let discountAmount = 0;
-  if (form.discount_type === "percentage") discountAmount = subtotal * (form.discount_value / 100);
-  else if (form.discount_type === "amount") discountAmount = form.discount_value;
-  const total = subtotal - discountAmount + taxTotal;
+  const {
+    subtotal,
+    tax_total: taxTotal,
+    discount_amount: discountAmount,
+    total,
+  } = calculateInvoiceTotals(items, form.discount_type, form.discount_value, {
+    currency: form.currency,
+    pricesIncludeTax: form.prices_include_tax,
+  });
 
   // Currency change resets the rate to 1 for the base currency, and (when
   // auto-fetch is enabled) pulls a live rate for foreign currencies. The guard
@@ -978,6 +966,7 @@ export default function InvoiceForm({ onSave }: Props) {
                   >
                     {items.map((item, i) => (
                       <SortableLineItem
+                        currency={form.currency}
                         key={item._key}
                         id={item._key}
                         item={item}
@@ -1062,7 +1051,7 @@ export default function InvoiceForm({ onSave }: Props) {
                     <NumberInput
                       value={form.discount_value}
                       min={0}
-                      decimals={2}
+                      decimals={form.discount_type === "amount" ? moneyDecimals(form.currency) : 2}
                       onValueChange={(v) => setForm({ ...form, discount_value: v })}
                     />
                   </div>
@@ -1106,7 +1095,9 @@ export default function InvoiceForm({ onSave }: Props) {
                       <NumberInput
                         value={form.cash_discount_value}
                         min={0}
-                        decimals={2}
+                        decimals={
+                          form.cash_discount_type === "amount" ? moneyDecimals(form.currency) : 2
+                        }
                         onValueChange={(v) => setForm({ ...form, cash_discount_value: v })}
                       />
                     </div>

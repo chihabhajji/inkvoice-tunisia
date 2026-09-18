@@ -45,7 +45,7 @@ import {
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 import { pushRecentlyViewed } from "@/lib/recently-viewed";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency, formatDate, moneyDecimals, roundMoney } from "@/lib/utils";
 
 const STATUS_COLORS: Record<string, string> = {
   draft: "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
@@ -646,7 +646,7 @@ export default function QuoteView() {
                       value={row.value}
                       onValueChange={(v) => updateRow(index, { value: v })}
                       min={0}
-                      decimals={2}
+                      decimals={moneyDecimals(row.unit === "amount" ? quote.currency : "USD")}
                       aria-label={t("quotes.instalment_value")}
                     />
                     <Button
@@ -657,7 +657,7 @@ export default function QuoteView() {
                           unit: row.unit === "percent" ? "amount" : "percent",
                           value:
                             row.unit === "percent"
-                              ? Math.round((row.value / 100) * quote.total * 100) / 100
+                              ? roundMoney((row.value / 100) * quote.total, quote.currency)
                               : Math.round((row.value / quote.total) * 10000) / 100,
                         })
                       }

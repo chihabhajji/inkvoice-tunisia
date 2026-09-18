@@ -20,6 +20,7 @@ export interface Currency {
 }
 
 export const CURRENCIES: Currency[] = [
+  { code: "TND", name: "Tunisian Dinar", symbol: "DT" },
   { code: "USD", name: "US Dollar", symbol: "$" },
   { code: "EUR", name: "Euro", symbol: "€" },
   { code: "GBP", name: "British Pound", symbol: "£" },

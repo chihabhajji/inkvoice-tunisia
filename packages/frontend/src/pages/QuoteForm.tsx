@@ -33,7 +33,8 @@ import { useTranslation } from "@/i18n";
 import { todayIso } from "@/lib/date";
 import { formatApiError } from "@/lib/format-api-error";
 import { markRowHighlight } from "@/lib/highlight-row";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn, formatCurrency, moneyDecimals } from "@/lib/utils";
+import { calculateInvoiceTotals } from "../../../backend/src/utils/tax-calculator";
 
 interface LineItem {
   _key: string;
@@ -53,6 +54,7 @@ function genKey() {
 }
 
 function SortableQuoteItem({
+  currency,
   id,
   item,
   index,
@@ -63,6 +65,7 @@ function SortableQuoteItem({
   onRemoveItem,
   t,
 }: {
+  currency: string;
   id: string;
   item: LineItem;
   index: number;
@@ -143,7 +146,7 @@ function SortableQuoteItem({
         <NumberInput
           value={item.unit_price}
           min={0}
-          decimals={2}
+          decimals={moneyDecimals(currency)}
           onValueChange={(v) => onUpdateItem(index, "unit_price", v)}
           className="text-sm"
         />
@@ -401,7 +404,7 @@ export default function QuoteForm() {
     return () => document.removeEventListener("keydown", handler);
   }, [addItem]);
 
-  const subtotal = items.reduce((s, it) => s + it.quantity * it.unit_price, 0);
+  const { subtotal } = calculateInvoiceTotals(items, undefined, undefined, { currency });
 
   return (
     <div className="max-w-4xl space-y-6">
@@ -516,6 +519,7 @@ export default function QuoteForm() {
                 >
                   {items.map((item, i) => (
                     <SortableQuoteItem
+                      currency={currency}
                       key={item._key}
                       id={item._key}
                       item={item}

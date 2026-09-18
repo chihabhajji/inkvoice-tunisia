@@ -1,4 +1,5 @@
 import type { CsvColumn } from "../utils/csv";
+import { requireTwoDecimalCurrency } from "../utils/currency";
 import type {
   ExpenseExportRow,
   InvoiceExportRow,
@@ -35,8 +36,10 @@ export interface ExportLayout<T> {
 
 // --- shared formatters ---------------------------------------------------
 
-const money = (v: unknown): string =>
-  v === null || v === undefined || v === "" ? "" : Number(v).toFixed(2);
+const money = (v: unknown, row: { currency: string }): string => {
+  requireTwoDecimalCurrency(row.currency, "Accounting export");
+  return v === null || v === undefined || v === "" ? "" : Number(v).toFixed(2);
+};
 
 const qty = (v: unknown): string =>
   v === null || v === undefined || v === "" ? "" : String(Number(v));

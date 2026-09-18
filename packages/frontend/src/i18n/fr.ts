@@ -1200,6 +1200,8 @@ const fr: TranslationKeys = {
 
   // Mise en page publique
   public: {
+    tnd_manual_payment:
+      "Les paiements en TND doivent être effectués manuellement. Suivez les instructions de paiement sur la facture.",
     invoice: "Facture",
     quote: "Devis",
     print_save_pdf: "Imprimer / Enregistrer en PDF",

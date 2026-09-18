@@ -1179,6 +1179,8 @@ const en = {
 
   // Public layout
   public: {
+    tnd_manual_payment:
+      "TND payments must be made manually. Please use the payment instructions on the invoice.",
     invoice: "Invoice",
     quote: "Quote",
     print_save_pdf: "Print / Save PDF",

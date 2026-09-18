@@ -1,3 +1,4 @@
+import { requireTwoDecimalCurrency } from "../../utils/currency";
 import type { XmlProfile } from "../base-profile";
 import type { XmlInvoiceData, XmlTaxBreakdown } from "../types";
 
@@ -30,6 +31,7 @@ export class FacturxZugferdProfile implements XmlProfile {
   }
 
   generateXml(data: XmlInvoiceData): string {
+    requireTwoDecimalCurrency(data.currency, "Structured e-invoice export");
     const isCredit = data.type === "credit_note";
     const typeCode = isCredit ? "381" : "380";
     const franchise = data.franchise_fr === true;

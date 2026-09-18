@@ -25,6 +25,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { type Language, languages, useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
+import { moneyDecimals } from "@/lib/utils";
 import ProductSettings from "@/pages/ProductSettings";
 import { getSettingsTabs } from "@/pages/settings-tab-registry";
 import Templates from "@/pages/Templates";
@@ -1419,7 +1420,9 @@ export default function Settings() {
                       <NumberInput
                         value={settings.late_fee_value || ""}
                         min={0}
-                        decimals={2}
+                        decimals={
+                          settings.late_fee_type === "fixed" ? moneyDecimals(settings.currency) : 2
+                        }
                         onValueChange={(v) =>
                           setSettings({ ...settings, late_fee_value: String(v) })
                         }

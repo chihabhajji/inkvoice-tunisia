@@ -1181,6 +1181,8 @@ const tr: TranslationKeys = {
 
   // Genel düzen
   public: {
+    tnd_manual_payment:
+      "TND ödemeleri manuel yapılmalıdır. Lütfen faturadaki ödeme talimatlarını izleyin.",
     invoice: "Fatura",
     quote: "Teklif",
     print_save_pdf: "Yazdır / PDF Kaydet",

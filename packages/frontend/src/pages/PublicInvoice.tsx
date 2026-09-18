@@ -135,6 +135,9 @@ export default function PublicInvoice() {
         style={{ minHeight: "900px" }}
         title={t("public.invoice")}
       />
+      {invoiceData?.currency?.toUpperCase() === "TND" && balanceDue > 0 && (
+        <p className="py-4 text-center text-muted-foreground">{t("public.tnd_manual_payment")}</p>
+      )}
       {paymentMethods.length > 0 && balanceDue > 0 && invoiceData?.status !== "paid" && (
         <div className="flex flex-col items-center gap-3 py-6">
           {paymentMethods.some((m) => m.id === "stripe") && (

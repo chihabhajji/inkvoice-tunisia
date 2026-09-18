@@ -229,6 +229,7 @@ export async function generateInvoice(recurringId: string): Promise<string | nul
     notes: template.notes,
     payment_terms: template.payment_terms,
     currency: template.currency,
+    prices_include_tax: template.prices_include_tax === 1,
     discount_type: template.discount_type,
     discount_value: template.discount_value,
     template_id: template.template_id,

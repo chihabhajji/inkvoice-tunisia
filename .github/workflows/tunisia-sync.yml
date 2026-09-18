@@ -1,0 +1,59 @@
+name: Tunisia sync and deploy
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "23 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: tunisia-production
+  cancel-in-progress: false
+
+jobs:
+  update:
+    if: github.repository == 'chihabhajji/inkvoice-tunisia'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Merge upstream into a candidate
+        if: github.event_name != 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch https://github.com/pigontech/inkvoice.git main
+          git merge --no-edit FETCH_HEAD
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun test
+      - run: python3 scripts/test-deploy-coolify.py
+      - run: bun run build
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Promote tested candidate
+        run: |
+          # A normal push rejects concurrent changes; never overwrite fork work.
+          git push origin HEAD:main
+      - name: Promote production and verify deployment
+        if: vars.COOLIFY_DEPLOY_ENABLED == 'true'
+        run: |
+          test "$(git ls-remote origin refs/heads/main | cut -f1)" = "$(git rev-parse HEAD)"
+          git push origin HEAD:production
+          python3 scripts/deploy-coolify.py

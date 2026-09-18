@@ -213,6 +213,10 @@ export async function attemptAutoBill(
     };
   }
 
+  if (invoice.currency.toUpperCase() === "TND") {
+    return { status: "skipped", errorCode: "unsupported_currency", emailedPaymentLink: false };
+  }
+
   const balanceDue = invoice.total - (invoice.amount_paid || 0);
   if (balanceDue <= 0) {
     return { status: "skipped", errorCode: "no_balance_due", emailedPaymentLink: false };

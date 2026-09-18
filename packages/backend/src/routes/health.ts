@@ -11,6 +11,7 @@ interface HealthResponse {
   status: "ok" | "degraded" | "unhealthy";
   checks: Record<string, HealthCheck>;
   timestamp: string;
+  commit: string | null;
 }
 
 // Extension point: a deployment can replace the default database check with
@@ -58,6 +59,7 @@ export async function healthRoute(c: Context): Promise<Response> {
       status,
       checks,
       timestamp: new Date().toISOString(),
+      commit: process.env.SOURCE_COMMIT || null,
     } satisfies HealthResponse,
     httpStatus,
   );

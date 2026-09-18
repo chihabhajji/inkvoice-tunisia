@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { requireTwoDecimalCurrency } from "../utils/currency";
 import { todayIso } from "../utils/date";
 import { getEnv } from "../utils/env";
 import { logger } from "../utils/logger";
@@ -66,6 +67,7 @@ export async function createCheckoutSession(opts: {
   customerId?: string | null;
   consentText?: string | null;
 }): Promise<{ url: string }> {
+  requireTwoDecimalCurrency(opts.currency, "Online payments");
   const stripe = await getStripe();
   const session = await stripe.checkout.sessions.create({
     payment_method_types: ["card"],
@@ -211,6 +213,13 @@ export function classifyStripeError(code: string | undefined): OffSessionStatus 
 }
 
 export async function chargeOffSession(ctx: OffSessionContext): Promise<OffSessionResult> {
+  if (ctx.currency.toUpperCase() === "TND") {
+    return {
+      status: "hard_failed",
+      errorCode: "unsupported_currency",
+      errorMessage: "TND requires manual payment.",
+    };
+  }
   try {
     // getStripe() must be called inside the try. A resolver failure (missing
     // key, decrypt error, transient store read) is a normal condition in a

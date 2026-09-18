@@ -1,3 +1,4 @@
+import { roundMoney } from "./money";
 /**
  * Early-payment (cash) discount helpers.
  *
@@ -36,11 +37,16 @@ export function hasCashDiscount(config: CashDiscountConfig): boolean {
  * - percentage: round2(amount * value / 100)
  * - amount: min(value, amount)
  */
-export function cashDiscountOn(amount: number, config: Required<CashDiscountConfig>): number {
+export function cashDiscountOn(
+  amount: number,
+  config: Required<CashDiscountConfig>,
+  currency?: string,
+): number {
+  const round = (n: number) => roundMoney(n, currency);
   if (!hasCashDiscount(config) || amount <= 0) return 0;
   const value = config.value;
-  const discounted = config.type === "amount" ? value : round2((amount * value) / 100);
-  return Math.min(round2(discounted), amount);
+  const discounted = config.type === "amount" ? value : round((amount * value) / 100);
+  return Math.min(round(discounted), amount);
 }
 
 /** Date (ISO) the cash discount expires for an invoice issued on `issueDate`. */

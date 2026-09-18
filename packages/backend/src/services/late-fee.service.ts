@@ -1,16 +1,14 @@
 import crypto from "node:crypto";
 import { getDb } from "../database/connection";
 import { todayIso, toIsoDate } from "../utils/date";
+import { roundMoney } from "../utils/money";
 import { calculateInvoiceTotals } from "../utils/tax-calculator";
 import { logActivity } from "./activity.service";
 import { getAllSettings } from "./settings.service";
 
-function round2(n: number): number {
-  return Math.round(n * 100) / 100;
-}
-
 interface EligibleInvoice {
   id: string;
+  currency: string;
   total: number;
   discount_type: string | null;
   discount_value: number;
@@ -52,7 +50,7 @@ export function applyLateFees(): number {
 
   const eligible = db
     .query(
-      `SELECT id, total, discount_type, discount_value, prices_include_tax
+      `SELECT id, currency, total, discount_type, discount_value, prices_include_tax
        FROM invoices
        WHERE status = 'overdue'
          AND deleted_at IS NULL
@@ -66,7 +64,7 @@ export function applyLateFees(): number {
   let applied = 0;
   for (const inv of eligible) {
     const base = inv.total;
-    const fee = type === "fixed" ? value : round2(base * (value / 100));
+    const fee = roundMoney(type === "fixed" ? value : base * (value / 100), inv.currency);
     if (fee <= 0) continue;
 
     db.transaction(() => {
@@ -97,7 +95,7 @@ export function applyLateFees(): number {
         })),
         inv.discount_type,
         inv.discount_value,
-        { pricesIncludeTax: inv.prices_include_tax === 1 },
+        { pricesIncludeTax: inv.prices_include_tax === 1, currency: inv.currency },
       );
 
       const nextDate = frequency === "monthly" ? addDaysIso(today, 30) : null;

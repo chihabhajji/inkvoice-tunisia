@@ -269,11 +269,15 @@ export function buildInvoiceContext(invoiceId: string) {
         )
       : null,
     formatted_cash_discount: formatCurrency(
-      cashDiscountOn(balanceDue, {
-        type: invoice.cash_discount_type,
-        value: invoice.cash_discount_value,
-        days: invoice.cash_discount_days,
-      }),
+      cashDiscountOn(
+        balanceDue,
+        {
+          type: invoice.cash_discount_type,
+          value: invoice.cash_discount_value,
+          days: invoice.cash_discount_days,
+        },
+        currency,
+      ),
       currency,
       numberFormat,
       localeOverride,

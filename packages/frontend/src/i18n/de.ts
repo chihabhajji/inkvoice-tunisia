@@ -1210,6 +1210,8 @@ const de: TranslationKeys = {
 
   // Öffentliches Layout
   public: {
+    tnd_manual_payment:
+      "TND-Zahlungen müssen manuell erfolgen. Bitte beachten Sie die Zahlungsinformationen auf der Rechnung.",
     invoice: "Rechnung",
     quote: "Angebot",
     print_save_pdf: "Drucken / Als PDF speichern",

@@ -4,6 +4,7 @@ import type { PaginatedResponse } from "../types/common";
 import type { Quote, QuoteItem, QuoteWithItems } from "../types/quote";
 import { todayIso } from "../utils/date";
 import { generateQuoteNumber } from "../utils/invoice-number";
+import { roundMoney } from "../utils/money";
 import { calculateInvoiceTotals, calculateLineItem } from "../utils/tax-calculator";
 import { createInvoice, getInvoice, updateInvoice } from "./invoice.service";
 
@@ -166,9 +167,19 @@ export function createQuote(data: CreateQuoteData): QuoteWithItems {
     const itemInputs = data.items.map((item) => ({
       quantity: item.quantity,
       unit_price: item.unit_price,
-      tax_rate: item.tax_rate ?? 0,
+      tax_rate: item.tax_id
+        ? ((
+            db.query("SELECT rate FROM tax_definitions WHERE id = ?").get(item.tax_id) as {
+              rate: number;
+            } | null
+          )?.rate ??
+          item.tax_rate ??
+          0)
+        : (item.tax_rate ?? 0),
     }));
-    const totals = calculateInvoiceTotals(itemInputs, data.discount_type, data.discount_value);
+    const totals = calculateInvoiceTotals(itemInputs, data.discount_type, data.discount_value, {
+      currency: data.currency,
+    });
 
     db.run(
       `INSERT INTO quotes (id, quote_number, customer_id, status,
@@ -201,21 +212,17 @@ export function createQuote(data: CreateQuoteData): QuoteWithItems {
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
-    for (const item of data.items) {
+    for (const [index, item] of data.items.entries()) {
       const itemId = crypto.randomBytes(16).toString("hex");
-      // Resolve tax rate from definition if tax_id is provided
-      let taxRate = item.tax_rate ?? 0;
-      if (item.tax_id) {
-        const taxDef = db
-          .query("SELECT rate FROM tax_definitions WHERE id = ?")
-          .get(item.tax_id) as { rate: number } | null;
-        if (taxDef) taxRate = taxDef.rate;
-      }
-      const calc = calculateLineItem({
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        tax_rate: taxRate,
-      });
+      const taxRate = itemInputs[index].tax_rate;
+      const calc = calculateLineItem(
+        {
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: taxRate,
+        },
+        data.currency,
+      );
       itemStmt.run(
         itemId,
         quoteId,
@@ -252,9 +259,19 @@ export function updateQuote(id: string, data: CreateQuoteData): QuoteWithItems |
     const itemInputs = data.items.map((item) => ({
       quantity: item.quantity,
       unit_price: item.unit_price,
-      tax_rate: item.tax_rate ?? 0,
+      tax_rate: item.tax_id
+        ? ((
+            db.query("SELECT rate FROM tax_definitions WHERE id = ?").get(item.tax_id) as {
+              rate: number;
+            } | null
+          )?.rate ??
+          item.tax_rate ??
+          0)
+        : (item.tax_rate ?? 0),
     }));
-    const totals = calculateInvoiceTotals(itemInputs, data.discount_type, data.discount_value);
+    const totals = calculateInvoiceTotals(itemInputs, data.discount_type, data.discount_value, {
+      currency: data.currency,
+    });
 
     db.run(
       `UPDATE quotes SET customer_id = ?, issue_date = ?, valid_until = ?,
@@ -287,20 +304,17 @@ export function updateQuote(id: string, data: CreateQuoteData): QuoteWithItems |
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     );
 
-    for (const item of data.items) {
+    for (const [index, item] of data.items.entries()) {
       const itemId = crypto.randomBytes(16).toString("hex");
-      let taxRate = item.tax_rate ?? 0;
-      if (item.tax_id) {
-        const taxDef = db
-          .query("SELECT rate FROM tax_definitions WHERE id = ?")
-          .get(item.tax_id) as { rate: number } | null;
-        if (taxDef) taxRate = taxDef.rate;
-      }
-      const calc = calculateLineItem({
-        quantity: item.quantity,
-        unit_price: item.unit_price,
-        tax_rate: taxRate,
-      });
+      const taxRate = itemInputs[index].tax_rate;
+      const calc = calculateLineItem(
+        {
+          quantity: item.quantity,
+          unit_price: item.unit_price,
+          tax_rate: taxRate,
+        },
+        data.currency,
+      );
       itemStmt.run(
         itemId,
         id,
@@ -532,7 +546,7 @@ export function convertQuoteToInvoices(
 
   // Resolve each instalment to a percentage of the quote total.
   const percentages: number[] = instalments.map((inst) =>
-    inst.unit === "amount" ? round2((inst.value / existing.total) * 100) : inst.value,
+    inst.unit === "amount" ? (inst.value / existing.total) * 100 : inst.value,
   );
   const sum = round2(percentages.reduce((a, b) => a + b, 0));
   if (Math.abs(sum - 100) > 0.01) return { success: false, error: "Instalments must total 100%" };
@@ -565,14 +579,14 @@ export function convertQuoteToInvoices(
       // amount discount is scaled by the same share.
       const scaledDiscountValue =
         existing.discount_type === "amount"
-          ? round2(existing.discount_value * scale)
+          ? roundMoney(existing.discount_value * scale, existing.currency)
           : existing.discount_value;
 
       const items = existing.items.map((item) => ({
         product_id: item.product_id,
         description: item.description,
         quantity: item.quantity,
-        unit_price: round2(item.unit_price * scale),
+        unit_price: roundMoney(item.unit_price * scale, existing.currency),
         unit: item.unit,
         tax_id: item.tax_id,
         tax_rate: item.tax_rate,
@@ -602,9 +616,12 @@ export function convertQuoteToInvoices(
     });
 
     // Absorb rounding drift so the instalments exactly sum to the quote total.
-    const sumTotal = round2(invoices.reduce((a, b) => a + getInvoice(b.id)!.total, 0));
-    const diff = round2(existing.total - sumTotal);
-    if (Math.abs(diff) > 0.009) {
+    const sumTotal = roundMoney(
+      invoices.reduce((a, b) => a + getInvoice(b.id)!.total, 0),
+      existing.currency,
+    );
+    const diff = roundMoney(existing.total - sumTotal, existing.currency);
+    if (Math.abs(diff) >= (existing.currency.toUpperCase() === "TND" ? 0.001 : 0.01)) {
       const last = invoices[invoices.length - 1];
       const lastInvoice = getInvoice(last.id)!;
       const adjustedItems = [
