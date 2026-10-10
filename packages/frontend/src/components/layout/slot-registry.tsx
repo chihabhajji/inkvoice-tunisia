@@ -9,8 +9,9 @@
 //   - login-oauth       (above the login form — alternative sign-in methods)
 //   - login-footer      (below the login form — e.g. a sign-up link)
 //   - settings-payments (top of the Settings → Payments tab)
-//   - settings-email    (top of the Settings → Email tab; when filled, replaces
-//                        the SMTP environment-variable hint)
+//   - settings-email    (top of the Settings → Email tab; when filled, it owns
+//                        the SMTP status and test email, replacing the
+//                        environment-variable hint)
 
 import type { ReactNode } from "react";
 

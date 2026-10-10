@@ -1190,8 +1190,9 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="email" className="max-w-3xl">
-          {/* Overlay-provided mail server setup. It owns the SMTP status, so
-              the environment-variable hint below only shows without it. */}
+          {/* Overlay-provided mail server setup. It owns the SMTP status and the
+              test email, so the environment-variable hint and the test control
+              below only show without it. */}
           <Slot name="settings-email" />
           <Card className="mt-4">
             <CardHeader>
@@ -1267,7 +1268,7 @@ export default function Settings() {
                   {t("settings.email_template_variables")}
                 </p>
               </div>
-              {settings.email_configured === "true" && (
+              {settings.email_configured === "true" && !hasSlot("settings-email") && (
                 <div className="pt-2 border-t">
                   <p className="text-sm font-medium mb-2">{t("settings.test_connection")}</p>
                   <div className="flex gap-2">
