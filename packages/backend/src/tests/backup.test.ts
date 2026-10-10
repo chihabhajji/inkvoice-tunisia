@@ -117,6 +117,18 @@ describe("GET /export/backup", () => {
     expect(body.data.settings.plugin_catalog_cache).toBeUndefined();
     expect(body.data.settings.company_name).toBeDefined();
   });
+
+  test("leaves invoice share tokens out (they open and pay the invoice)", async () => {
+    getDb().run(
+      "INSERT INTO invoices (id, invoice_number, customer_id, issue_date, status, total, share_token, is_published) VALUES ('inv-share', 'INV-SHARE-1', 'test-customer-1', '2026-10-01', 'sent', 10, 'json-backup-share-token', 1)",
+    );
+    const res = await app.request("/api/v1/export/backup", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const text = await res.text();
+    expect(text).toContain("INV-SHARE-1");
+    expect(text).not.toContain("json-backup-share-token");
+  });
 });
 
 describe("GET /export/sqlite with a snapshot sanitizer", () => {

@@ -54,7 +54,10 @@ exportRoutes.get("/backup", (c) => {
   const customers = db.query("SELECT * FROM customers").all();
   const products = db.query("SELECT * FROM products").all();
   const taxDefinitions = db.query("SELECT * FROM tax_definitions").all();
-  const invoices = db.query("SELECT * FROM invoices").all();
+  // Share tokens open (and pay) the invoice; a backup file has no use for them.
+  const invoices = (db.query("SELECT * FROM invoices").all() as Record<string, unknown>[]).map(
+    ({ share_token: _shareToken, ...invoice }) => invoice,
+  );
   const invoiceItems = db.query("SELECT * FROM invoice_items").all();
   const templates = db.query("SELECT * FROM templates").all();
   const users = db
