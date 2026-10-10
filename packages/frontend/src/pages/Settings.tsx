@@ -553,53 +553,60 @@ export default function Settings() {
             </CardContent>
           </Card>
 
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle className="text-sm">{t("settings.restore_section")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                {t("settings.restore_description")}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  id="restore-file-input"
-                  type="file"
-                  accept=".db,application/octet-stream"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] ?? null;
-                    setRestoreFile(f);
-                    if (f) setRestoreConfirmOpen(true);
-                    e.target.value = "";
-                  }}
-                />
-                <Button
-                  variant="outline"
-                  disabled={restoreBusy}
-                  onClick={() => document.getElementById("restore-file-input")?.click()}
-                >
-                  <Upload className="h-4 w-4 mr-2" /> {t("settings.restore_button")}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* A deployment can disable restore and wipe; the backend then refuses them. */}
+          {settings.destructive_db_ops !== "false" && (
+            <>
+              <Card className="mt-4">
+                <CardHeader>
+                  <CardTitle className="text-sm">{t("settings.restore_section")}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {t("settings.restore_description")}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      id="restore-file-input"
+                      type="file"
+                      accept=".db,application/octet-stream"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        setRestoreFile(f);
+                        if (f) setRestoreConfirmOpen(true);
+                        e.target.value = "";
+                      }}
+                    />
+                    <Button
+                      variant="outline"
+                      disabled={restoreBusy}
+                      onClick={() => document.getElementById("restore-file-input")?.click()}
+                    >
+                      <Upload className="h-4 w-4 mr-2" /> {t("settings.restore_button")}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card className="mt-4 border-destructive/50">
-            <CardHeader>
-              <CardTitle className="text-sm">{t("settings.wipe_section")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">{t("settings.wipe_description")}</p>
-              <Button
-                variant="destructive"
-                disabled={wipeBusy}
-                onClick={() => setWipeConfirmOpen(true)}
-              >
-                <Trash2 className="h-4 w-4 mr-2" /> {t("settings.wipe_button")}
-              </Button>
-            </CardContent>
-          </Card>
+              <Card className="mt-4 border-destructive/50">
+                <CardHeader>
+                  <CardTitle className="text-sm">{t("settings.wipe_section")}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {t("settings.wipe_description")}
+                  </p>
+                  <Button
+                    variant="destructive"
+                    disabled={wipeBusy}
+                    onClick={() => setWipeConfirmOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" /> {t("settings.wipe_button")}
+                  </Button>
+                </CardContent>
+              </Card>
+            </>
+          )}
 
           <Card className="mt-4">
             <CardHeader>

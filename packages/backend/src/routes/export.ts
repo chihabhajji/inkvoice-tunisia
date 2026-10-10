@@ -160,6 +160,10 @@ export function setDestructiveDbOpsEnabled(enabled: boolean): void {
   destructiveDbOpsEnabled = enabled;
 }
 
+export function isDestructiveDbOpsEnabled(): boolean {
+  return destructiveDbOpsEnabled;
+}
+
 /**
  * Replace the live database with an uploaded SQLite snapshot.
  *

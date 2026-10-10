@@ -8,7 +8,7 @@ import { createApp } from "../app";
 import { closeDatabase, getDb, initDatabase } from "../database/connection";
 import { runMigrations } from "../database/migrations";
 import { seed } from "../database/seed";
-import { setSnapshotSanitizer } from "../routes/export";
+import { setDestructiveDbOpsEnabled, setSnapshotSanitizer } from "../routes/export";
 import { updateSettings } from "../services/settings.service";
 import { resetEnvCache } from "../utils/env";
 
@@ -251,5 +251,38 @@ describe("POST /export/wipe", () => {
       body: JSON.stringify({ confirm: "DELETE" }),
     });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("settings report whether restore and wipe are available", () => {
+  afterEach(() => setDestructiveDbOpsEnabled(true));
+
+  async function getSettings(): Promise<Record<string, string>> {
+    const res = await app.request("/api/v1/settings", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { data: Record<string, string> }).data;
+  }
+
+  test("a self-hosted install offers them", async () => {
+    expect((await getSettings()).destructive_db_ops).toBe("true");
+  });
+
+  test("a deployment that disables them says so", async () => {
+    setDestructiveDbOpsEnabled(false);
+    expect((await getSettings()).destructive_db_ops).toBe("false");
+  });
+
+  test("saving settings keeps the answer, since the page replaces its state with the response", async () => {
+    setDestructiveDbOpsEnabled(false);
+    const res = await app.request("/api/v1/settings", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(await getSettings()),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Record<string, string> };
+    expect(body.data.destructive_db_ops).toBe("false");
   });
 });

@@ -11,6 +11,7 @@ import {
 } from "../services/settings.service";
 import { getEnv } from "../utils/env";
 import { isSepaIban, isValidBic, normalizeBic, normalizeIban } from "../utils/epc-qr";
+import { isDestructiveDbOpsEnabled } from "./export";
 
 const settings = new Hono();
 
@@ -22,6 +23,7 @@ settings.get("/", async (c) => {
     data: {
       ...data,
       email_configured: emailConfigured ? "true" : "false",
+      destructive_db_ops: isDestructiveDbOpsEnabled() ? "true" : "false",
       demo_mode: getEnv().DEMO_MODE ? "true" : "false",
     },
   });
@@ -217,7 +219,11 @@ settings.put("/", async (c) => {
   const emailConfigured = await isEmailConfigured();
   return c.json({
     success: true,
-    data: { ...data, email_configured: emailConfigured ? "true" : "false" },
+    data: {
+      ...data,
+      email_configured: emailConfigured ? "true" : "false",
+      destructive_db_ops: isDestructiveDbOpsEnabled() ? "true" : "false",
+    },
   });
 });
 
