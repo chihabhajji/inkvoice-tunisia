@@ -3,7 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { Slot } from "@/components/layout/slot-registry";
+import { hasSlot, Slot } from "@/components/layout/slot-registry";
 import { ApiTokensCard } from "@/components/shared/ApiTokensCard";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
 import { FormField } from "@/components/shared/FormField";
@@ -1190,6 +1190,9 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="email" className="max-w-3xl">
+          {/* Overlay-provided mail server setup. It owns the SMTP status, so
+              the environment-variable hint below only shows without it. */}
+          <Slot name="settings-email" />
           <Card className="mt-4">
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
@@ -1197,19 +1200,23 @@ export default function Settings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">{t("settings.smtp_status")}</span>
-                {settings.email_configured === "true" ? (
-                  <span className="text-emerald-600 font-medium">
-                    {t("settings.smtp_configured")}
-                  </span>
-                ) : (
-                  <span className="text-amber-600 font-medium">
-                    {t("settings.smtp_not_configured")}
-                  </span>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">{t("settings.smtp_info")}</p>
+              {!hasSlot("settings-email") && (
+                <>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">{t("settings.smtp_status")}</span>
+                    {settings.email_configured === "true" ? (
+                      <span className="text-emerald-600 font-medium">
+                        {t("settings.smtp_configured")}
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 font-medium">
+                        {t("settings.smtp_not_configured")}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">{t("settings.smtp_info")}</p>
+                </>
+              )}
               <FormField label={t("settings.from_name")} hint={t("settings.from_name_hint")}>
                 <Input
                   value={settings.email_from_name || ""}

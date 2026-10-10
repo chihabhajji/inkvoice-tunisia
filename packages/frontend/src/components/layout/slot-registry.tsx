@@ -9,6 +9,8 @@
 //   - login-oauth       (above the login form — alternative sign-in methods)
 //   - login-footer      (below the login form — e.g. a sign-up link)
 //   - settings-payments (top of the Settings → Payments tab)
+//   - settings-email    (top of the Settings → Email tab; when filled, replaces
+//                        the SMTP environment-variable hint)
 
 import type { ReactNode } from "react";
 
@@ -19,7 +21,8 @@ export type SlotName =
   | "nav-extra"
   | "login-oauth"
   | "login-footer"
-  | "settings-payments";
+  | "settings-payments"
+  | "settings-email";
 
 const slots: Record<SlotName, ReactNode[]> = {
   "top-banners": [],
@@ -29,10 +32,15 @@ const slots: Record<SlotName, ReactNode[]> = {
   "login-oauth": [],
   "login-footer": [],
   "settings-payments": [],
+  "settings-email": [],
 };
 
 export function registerSlot(name: SlotName, node: ReactNode): void {
   slots[name].push(node);
+}
+
+export function hasSlot(name: SlotName): boolean {
+  return slots[name].length > 0;
 }
 
 export function Slot({ name }: { name: SlotName }) {
