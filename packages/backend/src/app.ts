@@ -144,6 +144,9 @@ export function createApp(options?: CreateAppOptions): Hono {
   app.use("/api/v1/settings", adminOnly);
   app.use("/api/v1/export/*", adminOnly);
   app.use("/api/v1/export", adminOnly);
+  // Webhooks decide where invoice events go, and a Slack URL is a credential.
+  app.use("/api/v1/outgoing-webhooks/*", adminOnly);
+  app.use("/api/v1/outgoing-webhooks", adminOnly);
 
   app.route("/api/v1/invoices", invoices);
   app.route("/api/v1/einvoices", einvoices);
