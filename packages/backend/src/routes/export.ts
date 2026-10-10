@@ -7,10 +7,38 @@ import { closeDatabase, getDb, initDatabase } from "../database/connection";
 import { runMigrations } from "../database/migrations";
 import { seed } from "../database/seed";
 import { runPluginMigrations } from "../plugins/runner";
+import { stripInternalSettings } from "../services/settings.service";
 import { todayIso } from "../utils/date";
 import { getEnv } from "../utils/env";
 
 const exportRoutes = new Hono();
+
+// Extension point: a deployment where the admin downloading a snapshot is not
+// the server operator (e.g. one database per customer workspace) registers a
+// sanitizer that strips credentials (teammates' password hashes, tokens) from
+// the copy before it is sent. It runs on the temporary snapshot, never on the
+// live database, and a sanitizer that throws fails the download.
+export type SnapshotSanitizer = (snapshot: Database, ctx: { userId: string | null }) => void;
+
+let snapshotSanitizer: SnapshotSanitizer | null = null;
+
+export function setSnapshotSanitizer(sanitizer: SnapshotSanitizer | null): void {
+  snapshotSanitizer = sanitizer;
+}
+
+function sanitizeSnapshot(path: string, userId: string | null): void {
+  if (!snapshotSanitizer) return;
+  const snapshot = new Database(path);
+  try {
+    // Zero what the sanitizer deletes, then rebuild the file so none of it
+    // survives in freed pages.
+    snapshot.exec("PRAGMA secure_delete = ON");
+    snapshotSanitizer(snapshot, { userId });
+    snapshot.exec("VACUUM");
+  } finally {
+    snapshot.close();
+  }
+}
 
 exportRoutes.get("/backup", (c) => {
   const db = getDb();
@@ -19,7 +47,9 @@ exportRoutes.get("/backup", (c) => {
     key: string;
     value: string;
   }[];
-  const settingsObj = Object.fromEntries(settings.map((s) => [s.key, s.value]));
+  const settingsObj = stripInternalSettings(
+    Object.fromEntries(settings.map((s) => [s.key, s.value])),
+  );
 
   const customers = db.query("SELECT * FROM customers").all();
   const products = db.query("SELECT * FROM products").all();
@@ -90,6 +120,7 @@ exportRoutes.get("/sqlite", (c) => {
     if (!existsSync(tmpPath)) {
       return c.json({ success: false, error: "Snapshot creation failed" }, 500);
     }
+    sanitizeSnapshot(tmpPath, c.get("user")?.sub ?? null);
 
     const buf = readFileSync(tmpPath);
 

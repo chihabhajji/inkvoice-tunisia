@@ -4,34 +4,15 @@ import { getDb } from "../database/connection";
 import { seedDemoData } from "../database/seed";
 import { isEmailConfigured, sendEmail, testConnection } from "../services/email.service";
 import { resetDemoData } from "../services/scheduler";
-import { getAllSettings, updateSettings } from "../services/settings.service";
+import {
+  getAllSettings,
+  stripInternalSettings,
+  updateSettings,
+} from "../services/settings.service";
 import { getEnv } from "../utils/env";
 import { isSepaIban, isValidBic, normalizeBic, normalizeIban } from "../utils/epc-qr";
 
 const settings = new Hono();
-
-// Internal catalog bookkeeping (cache blobs and fetch timestamps) lives in the
-// settings table but is not user-facing; handing it to the frontend would have
-// browsers cache potentially large JSON blobs. plugin_catalog_url is a real
-// setting and stays visible.
-const INTERNAL_SETTINGS = new Set([
-  "plugin_catalog_cache",
-  "plugin_catalog_synced_at",
-  "plugin_catalog_votes",
-  "plugin_catalog_votes_at",
-  // Install-local secret behind the opaque vote identity. Never leaves the
-  // server; handing it to a browser would let anyone mint another install's
-  // vote identities.
-  "plugin_vote_secret",
-]);
-
-function stripInternalSettings(data: Record<string, string>): Record<string, string> {
-  const visible: Record<string, string> = {};
-  for (const [key, value] of Object.entries(data)) {
-    if (!INTERNAL_SETTINGS.has(key)) visible[key] = value;
-  }
-  return visible;
-}
 
 settings.get("/", async (c) => {
   const data = stripInternalSettings(getAllSettings());
