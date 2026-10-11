@@ -300,8 +300,8 @@ describe("schema migration runner", () => {
     ).toThrow();
   });
 
-  test("migrations reach version 30", () => {
-    expect(LATEST_MIGRATION_VERSION).toBe(30);
+  test("migrations reach version 31", () => {
+    expect(LATEST_MIGRATION_VERSION).toBe(31);
   });
 
   test("customer_payment_methods has the expected shape", () => {
@@ -369,7 +369,7 @@ describe("schema migration runner", () => {
     // re-apply version 30 against it.
     runWith(db, () => runMigrations());
     db.exec("DROP INDEX IF EXISTS ux_payments_invoice_reference");
-    db.exec("DELETE FROM schema_migrations WHERE version = 30");
+    db.exec("DELETE FROM schema_migrations WHERE version >= 30");
 
     db.exec(`
       INSERT INTO customers (id, name) VALUES ('cust1', 'Test Co');
@@ -456,7 +456,7 @@ describe("schema migration runner", () => {
     // that actually survived, not the stale pre-dedupe total.
     runWith(db, () => runMigrations());
     db.exec("DROP INDEX IF EXISTS ux_payments_invoice_reference");
-    db.exec("DELETE FROM schema_migrations WHERE version = 30");
+    db.exec("DELETE FROM schema_migrations WHERE version >= 30");
 
     db.exec(`
       INSERT INTO customers (id, name) VALUES ('cust2', 'Recalc Co');

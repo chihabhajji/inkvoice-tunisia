@@ -23,7 +23,7 @@ setInterval(
   5 * 60 * 1000,
 );
 
-function clientIp(c: Context): string {
+export function clientIp(c: Context): string {
   return (
     c.req.header("cf-connecting-ip") ||
     c.req.header("x-forwarded-for")?.split(",")[0]?.trim() ||

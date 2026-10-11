@@ -1329,6 +1329,22 @@ const en = {
       "Any integration using this token will immediately stop working. This cannot be undone.",
   },
 
+  // Signed-in devices (Settings → API, mobile app sessions)
+  device_sessions: {
+    title: "Signed-in devices",
+    info: "Phones and tablets signed in to the Inkvoice mobile app with your account. Revoke a device to sign it out immediately.",
+    empty: "No devices are signed in.",
+    platform_ios: "iOS",
+    platform_android: "Android",
+    last_seen: "Last active {{time}}",
+    never_seen: "Not used yet",
+    revoke: "Revoke",
+    revoked: "Device signed out",
+    confirm_revoke_title: "Sign out this device?",
+    confirm_revoke_body:
+      "The app on this device will be signed out right away and will need your password to sign in again.",
+  },
+
   // Reminder rules (Settings → Reminders)
   reminder_rules: {
     title: "Reminder schedule",

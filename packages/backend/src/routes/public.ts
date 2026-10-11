@@ -13,10 +13,27 @@ import { getAllSettings, getSetting } from "../services/settings.service";
 import { isStripeConfigured } from "../services/stripe.service";
 import { DEMO_ADMIN_PASS, DEMO_ADMIN_USER, getEnv } from "../utils/env";
 import { isLikelyBot } from "../utils/user-agent";
+import { APP_VERSION } from "../utils/version";
 import { buildXmlInvoiceData } from "../xml/build-data";
 import { getProfile } from "../xml/profile-registry";
 
 const publicRoutes = new Hono();
+
+// Bumped when the mobile app needs to know the API changed shape. Level 1 is
+// the first contract the app is written against (server info, device sessions).
+export const API_LEVEL = 1;
+
+// Extension point: a deployment can merge extra fields into the public config
+// (e.g. its OAuth providers or workspace info). It receives the default data
+// object and returns the extended one. Mirrors setResetUrlBuilder and
+// setHealthChecks.
+type PublicConfigExtender = (data: Record<string, unknown>) => Record<string, unknown>;
+
+let publicConfigExtender: PublicConfigExtender | null = null;
+
+export function setPublicConfigExtender(fn: PublicConfigExtender | null): void {
+  publicConfigExtender = fn;
+}
 
 // What an unauthenticated visitor is allowed to know about this instance.
 // Everything here answers before auth, so it is permanently public — keep the
@@ -30,17 +47,34 @@ publicRoutes.get("/config", (c) => {
   // closed rather than echoing whatever ADMIN_PASS happens to be.
   const isThrowawayAdmin = env.ADMIN_USER === DEMO_ADMIN_USER && env.ADMIN_PASS === DEMO_ADMIN_PASS;
 
+  const data: Record<string, unknown> = {
+    demo_mode: env.DEMO_MODE,
+    demo_credentials:
+      env.DEMO_MODE && isThrowawayAdmin
+        ? { username: DEMO_ADMIN_USER, password: DEMO_ADMIN_PASS }
+        : null,
+    oidc_enabled: env.OIDC_ENABLED,
+    oidc_provider_name: env.OIDC_PROVIDER_NAME || null,
+    // What a client (the mobile app) needs before it can sign in.
+    server: { version: APP_VERSION, api_level: API_LEVEL },
+    auth: {
+      password: true,
+      device_sessions: true,
+      oidc: {
+        enabled: env.OIDC_ENABLED,
+        label: env.OIDC_PROVIDER_NAME || null,
+        // The browser SSO handoff for the app is not implemented yet.
+        mobile: false,
+      },
+      oauth: [],
+    },
+    features: { push: false, attachments: false, idempotency: false },
+    mobile: { min_app_version: null },
+  };
+
   return c.json({
     success: true,
-    data: {
-      demo_mode: env.DEMO_MODE,
-      demo_credentials:
-        env.DEMO_MODE && isThrowawayAdmin
-          ? { username: DEMO_ADMIN_USER, password: DEMO_ADMIN_PASS }
-          : null,
-      oidc_enabled: env.OIDC_ENABLED,
-      oidc_provider_name: env.OIDC_PROVIDER_NAME || null,
-    },
+    data: publicConfigExtender ? publicConfigExtender(data) : data,
   });
 });
 

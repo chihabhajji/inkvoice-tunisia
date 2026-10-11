@@ -1332,6 +1332,22 @@ const tr: TranslationKeys = {
       "Bu anahtarı kullanan tüm entegrasyonlar anında çalışmayı durdurur. Bu işlem geri alınamaz.",
   },
 
+  // Signed-in devices (Settings → API, mobile app sessions)
+  device_sessions: {
+    title: "Oturum açık cihazlar",
+    info: "Hesabınızla Inkvoice mobil uygulamasında oturum açmış telefon ve tabletler. Bir cihazın erişimini kaldırırsanız oturumu hemen kapanır.",
+    empty: "Oturum açık cihaz yok.",
+    platform_ios: "iOS",
+    platform_android: "Android",
+    last_seen: "Son etkinlik {{time}}",
+    never_seen: "Henüz kullanılmadı",
+    revoke: "Erişimi kaldır",
+    revoked: "Cihazın oturumu kapatıldı",
+    confirm_revoke_title: "Bu cihazın oturumu kapatılsın mı?",
+    confirm_revoke_body:
+      "Bu cihazdaki uygulamanın oturumu hemen kapanır ve yeniden giriş için şifreniz gerekir.",
+  },
+
   // Hatırlatma kuralları (Ayarlar → Hatırlatmalar)
   reminder_rules: {
     title: "Hatırlatma planı",

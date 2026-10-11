@@ -1094,6 +1094,26 @@ export const api = {
     }),
   deleteApiToken: (id: string) => request(`/api-tokens/${id}`, { method: "DELETE" }),
 
+  // Signed-in devices (mobile app sessions)
+  listDeviceSessions: () =>
+    request<{
+      success: boolean;
+      data: Array<{
+        id: string;
+        name: string;
+        platform: "ios" | "android";
+        model: string | null;
+        os_version: string | null;
+        app_version: string | null;
+        created_at: string;
+        last_seen_at: string | null;
+        expires_at: string;
+        current: boolean;
+      }>;
+    }>("/auth/device-sessions"),
+  revokeDeviceSession: (id: string) =>
+    request(`/auth/device-sessions/${encodeURIComponent(id)}`, { method: "DELETE" }),
+
   // Feedback
   submitFeedback: (data: { message: string; page_url?: string }) =>
     request<{ success: boolean; data: any }>("/feedback", {

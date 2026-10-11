@@ -16,6 +16,7 @@ import { apiTokens } from "./routes/api-tokens";
 import { auth } from "./routes/auth";
 import { customers } from "./routes/customers";
 import { dashboard } from "./routes/dashboard";
+import { deviceSessions } from "./routes/device-sessions";
 import { einvoices } from "./routes/einvoice";
 import { exchangeRate } from "./routes/exchange-rate";
 import { expenses } from "./routes/expenses";
@@ -118,6 +119,7 @@ export function createApp(options?: CreateAppOptions): Hono {
 
   // Public routes (no auth required)
   app.route("/api/v1/auth", auth);
+  app.route("/api/v1/auth/device-sessions", deviceSessions);
   app.route("/api/v1/auth/oidc", oidcRoutes);
   app.route("/api/v1/public", publicRoutes);
   app.route("/api/v1/webhooks", webhooks);

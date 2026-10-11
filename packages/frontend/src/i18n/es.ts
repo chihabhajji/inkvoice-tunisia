@@ -1348,6 +1348,22 @@ const es: TranslationKeys = {
       "Cualquier integración que use este token dejará de funcionar de inmediato. Esta acción no se puede deshacer.",
   },
 
+  // Signed-in devices (Settings → API, mobile app sessions)
+  device_sessions: {
+    title: "Dispositivos con sesión iniciada",
+    info: "Teléfonos y tabletas con sesión iniciada en la app móvil de Inkvoice con tu cuenta. Revoca un dispositivo para cerrar su sesión al instante.",
+    empty: "No hay dispositivos con sesión iniciada.",
+    platform_ios: "iOS",
+    platform_android: "Android",
+    last_seen: "Última actividad {{time}}",
+    never_seen: "Aún sin usar",
+    revoke: "Revocar",
+    revoked: "Sesión del dispositivo cerrada",
+    confirm_revoke_title: "¿Cerrar la sesión de este dispositivo?",
+    confirm_revoke_body:
+      "La app de este dispositivo cerrará la sesión de inmediato y necesitará tu contraseña para volver a entrar.",
+  },
+
   // Reglas de recordatorio (Configuración → Recordatorios)
   reminder_rules: {
     title: "Programación de recordatorios",

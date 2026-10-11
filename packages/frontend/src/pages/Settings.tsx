@@ -6,6 +6,7 @@ import { api } from "@/api/client";
 import { hasSlot, Slot } from "@/components/layout/slot-registry";
 import { ApiTokensCard } from "@/components/shared/ApiTokensCard";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { DeviceSessionsCard } from "@/components/shared/DeviceSessionsCard";
 import { FormField } from "@/components/shared/FormField";
 import { OutgoingWebhooksCard } from "@/components/shared/OutgoingWebhooksCard";
 import { PaymentTermsPicker } from "@/components/shared/PaymentTermsPicker";
@@ -1482,6 +1483,7 @@ export default function Settings() {
         </TabsContent>
         <TabsContent value="api" className="max-w-3xl">
           <ApiTokensCard />
+          <DeviceSessionsCard />
         </TabsContent>
 
         {getSettingsTabs()

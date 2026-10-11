@@ -1362,6 +1362,22 @@ const de: TranslationKeys = {
       "Jede Integration, die dieses Token verwendet, funktioniert sofort nicht mehr. Dies kann nicht rückgängig gemacht werden.",
   },
 
+  // Signed-in devices (Settings → API, mobile app sessions)
+  device_sessions: {
+    title: "Angemeldete Geräte",
+    info: "Smartphones und Tablets, die mit Ihrem Konto in der Inkvoice-App angemeldet sind. Widerrufen Sie ein Gerät, um es sofort abzumelden.",
+    empty: "Keine Geräte angemeldet.",
+    platform_ios: "iOS",
+    platform_android: "Android",
+    last_seen: "Zuletzt aktiv {{time}}",
+    never_seen: "Noch nicht verwendet",
+    revoke: "Widerrufen",
+    revoked: "Gerät abgemeldet",
+    confirm_revoke_title: "Dieses Gerät abmelden?",
+    confirm_revoke_body:
+      "Die App auf diesem Gerät wird sofort abgemeldet und benötigt Ihr Passwort für eine erneute Anmeldung.",
+  },
+
   // Erinnerungsregeln (Einstellungen → Erinnerungen)
   reminder_rules: {
     title: "Erinnerungsplan",

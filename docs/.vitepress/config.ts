@@ -63,6 +63,7 @@ export default defineConfig({
           { text: "Settings", link: "/api/settings" },
           { text: "Reports", link: "/api/reports" },
           { text: "Integrations", link: "/api/integrations" },
+          { text: "Mobile app", link: "/api/mobile" },
         ],
       },
       {
