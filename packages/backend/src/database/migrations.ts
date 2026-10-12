@@ -1118,6 +1118,25 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  {
+    version: 32,
+    name: "expense_receipts",
+    up: (db) => {
+      // One uploaded receipt (photo or PDF) per expense. Stored in the
+      // database like the e-invoice inbox's raw files, so a DB backup carries
+      // it and there is no separate upload directory to mount.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS expense_receipts (
+          expense_id TEXT PRIMARY KEY REFERENCES expenses(id) ON DELETE CASCADE,
+          file_name TEXT NOT NULL,
+          content_type TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          content BLOB NOT NULL,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+      `);
+    },
+  },
 ];
 
 export const LATEST_MIGRATION_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

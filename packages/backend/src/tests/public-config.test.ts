@@ -167,7 +167,13 @@ describe("GET /api/v1/public/config server info", () => {
       oidc: { enabled: false, label: null, mobile: false },
       oauth: [],
     });
-    expect(data.features).toEqual({ push: false, attachments: false, idempotency: false });
+    expect(data.features).toEqual({
+      push: false,
+      attachments: false,
+      idempotency: false,
+      receipt_upload: true,
+      partial_share_links: true,
+    });
     expect(data.mobile).toEqual({ min_app_version: null });
     // The fields the web login page already reads are still there.
     expect(data.oidc_enabled).toBe(false);

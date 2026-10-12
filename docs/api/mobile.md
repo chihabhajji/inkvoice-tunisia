@@ -27,7 +27,13 @@ No authentication. Besides the fields the web login page uses, it reports:
       "oidc": { "enabled": false, "label": null, "mobile": false },
       "oauth": []
     },
-    "features": { "push": false, "attachments": false, "idempotency": false },
+    "features": {
+      "push": false,
+      "attachments": false,
+      "idempotency": false,
+      "receipt_upload": true,
+      "partial_share_links": true
+    },
     "mobile": { "min_app_version": null }
   }
 }
@@ -40,6 +46,8 @@ No authentication. Besides the fields the web login page uses, it reports:
 | `auth.oidc` | Whether SSO is configured, its button label, and whether the app can use it (`mobile`) |
 | `auth.oauth` | Extra sign-in providers a deployment adds (empty on a self-hosted server) |
 | `features` | Optional server features the app can turn on |
+| `features.receipt_upload` | Expense receipts can be uploaded, fetched and deleted ([Expenses](/api/expenses#receipt-file)) |
+| `features.partial_share_links` | Partly paid invoices can be published and their share links keep working ([Invoices](/api/invoices#publish)) |
 | `mobile.min_app_version` | Oldest app version the server accepts, or `null` |
 
 A deployment can add fields with `setPublicConfigExtender(fn)` from

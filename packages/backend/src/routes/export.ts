@@ -280,6 +280,7 @@ exportRoutes.post("/wipe", async (c) => {
     "payments",
     "reminder_log",
     "activity_log",
+    "expense_receipts",
     "expenses",
     "recurring_invoices",
     "invoices",

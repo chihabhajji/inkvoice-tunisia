@@ -68,7 +68,15 @@ publicRoutes.get("/config", (c) => {
       },
       oauth: [],
     },
-    features: { push: false, attachments: false, idempotency: false },
+    features: {
+      push: false,
+      attachments: false,
+      idempotency: false,
+      // POST/GET/DELETE /api/v1/expenses/:id/receipt
+      receipt_upload: true,
+      // Partly paid invoices can be published and stay reachable by share link.
+      partial_share_links: true,
+    },
     mobile: { min_app_version: null },
   };
 
