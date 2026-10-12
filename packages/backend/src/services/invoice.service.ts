@@ -540,12 +540,26 @@ export function listTrashedInvoices(params: {
   };
 }
 
+/**
+ * Statuses an invoice can be published (given a public share link) in, and
+ * stay reachable through that link. A partly paid invoice still has a balance
+ * the customer needs to see and pay, so it is shareable like `sent`.
+ * Drafts and voided invoices are never public.
+ */
+export const SHAREABLE_STATUSES: readonly string[] = [
+  "sent",
+  "partially_paid",
+  "paid",
+  "overdue",
+  "complete",
+];
+
 export function publishInvoice(id: string): InvoiceWithItems | null {
   const db = getDb();
   const existing = db
     .query("SELECT status, share_token FROM invoices WHERE id = ? AND deleted_at IS NULL")
     .get(id) as { status: string; share_token: string | null } | null;
-  if (!existing || !["sent", "paid", "overdue", "complete"].includes(existing.status)) return null;
+  if (!existing || !SHAREABLE_STATUSES.includes(existing.status)) return null;
 
   const shareToken = existing.share_token || crypto.randomBytes(16).toString("hex");
   db.run(
@@ -631,7 +645,7 @@ export function markComplete(id: string): InvoiceWithItems | null {
  * view or pay the invoice.
  *
  * For a draft, or an invoice already in a status `publishInvoice` accepts
- * (`sent`, `paid`, `overdue`, `complete`), the invoice ends up `sent` (or
+ * (`SHAREABLE_STATUSES`), the invoice ends up `sent` (or
  * unchanged, if it already left draft), `is_published = 1`, and holding a
  * non-null `share_token`. For any other status, such as `voided`,
  * `publishInvoice` silently no-ops and the invoice is left as it was.
@@ -1020,7 +1034,7 @@ export function getInvoiceByShareToken(shareToken: string): InvoiceWithItems | n
 
   if (!invoice) return null;
   if (!invoice.is_published) return null;
-  if (!["sent", "paid", "overdue", "complete"].includes(invoice.status)) return null;
+  if (!SHAREABLE_STATUSES.includes(invoice.status)) return null;
 
   return getInvoice(invoice.id);
 }

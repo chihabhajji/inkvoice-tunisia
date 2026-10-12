@@ -80,7 +80,13 @@ Only draft invoices can be deleted.
 POST /api/v1/invoices/:id/publish
 ```
 
-Publishes the invoice and generates a share token. Changes status from `draft` to `sent`.
+Publishes the invoice and generates a share token for the public link
+(`/api/v1/public/invoices/:shareToken`). Allowed for `sent`, `partially_paid`,
+`paid`, `overdue` and `complete` invoices; drafts and voided invoices cannot be
+published. A partly paid invoice's public page shows the payments received and
+the remaining balance, and online payment charges only that balance. Servers
+that support partly paid share links report `features.partial_share_links: true`
+in `GET /api/v1/public/config`.
 
 ## Unpublish
 

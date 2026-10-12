@@ -126,3 +126,83 @@ describe("public invoice route", () => {
     expect([400, 404]).toContain(res.status);
   });
 });
+
+describe("public share links for partially paid invoices", () => {
+  async function partlyPaidInvoice(): Promise<string> {
+    const res = await authed("/api/v1/invoices", {
+      method: "POST",
+      body: JSON.stringify({
+        customer_id: customerId,
+        issue_date: "2026-03-01",
+        items: [{ description: "Partly paid", quantity: 1, unit_price: 200, tax_rate: 0 }],
+      }),
+    });
+    const id = ((await res.json()) as any).data.id;
+    await authed(`/api/v1/invoices/${id}/mark-sent`, { method: "POST" });
+    const pay = await authed(`/api/v1/invoices/${id}/payments`, {
+      method: "POST",
+      body: JSON.stringify({ amount: 80, payment_date: "2026-03-05", method: "cash" }),
+    });
+    expect(pay.status).toBe(201);
+    const inv = await authed(`/api/v1/invoices/${id}`);
+    expect(((await inv.json()) as any).data.status).toBe("partially_paid");
+    return id;
+  }
+
+  test("a partially paid invoice can be published and viewed with its balance", async () => {
+    const id = await partlyPaidInvoice();
+    const pub = await authed(`/api/v1/invoices/${id}/publish`, { method: "POST" });
+    expect(pub.status).toBe(200);
+    const shareToken = ((await pub.json()) as any).data.share_token;
+    expect(shareToken).toBeTruthy();
+
+    const res = await app.request(`/api/v1/public/invoices/${shareToken}`);
+    expect(res.status).toBe(200);
+    const data = ((await res.json()) as any).data;
+    expect(data.invoice.status).toBe("partially_paid");
+    expect(data.invoice.total - data.invoice.amount_paid).toBe(120);
+
+    const preview = await app.request(`/api/v1/public/invoices/${shareToken}/preview`);
+    expect(preview.status).toBe(200);
+    const html = await preview.text();
+    expect(html).toContain("Balance Due");
+    expect(html).toContain("120");
+  });
+
+  test("a published link keeps working after a part payment", async () => {
+    const res = await authed("/api/v1/invoices", {
+      method: "POST",
+      body: JSON.stringify({
+        customer_id: customerId,
+        issue_date: "2026-03-02",
+        items: [{ description: "Paid later", quantity: 1, unit_price: 100, tax_rate: 0 }],
+      }),
+    });
+    const id = ((await res.json()) as any).data.id;
+    await authed(`/api/v1/invoices/${id}/mark-sent`, { method: "POST" });
+    const pub = await authed(`/api/v1/invoices/${id}/publish`, { method: "POST" });
+    const shareToken = ((await pub.json()) as any).data.share_token;
+    await authed(`/api/v1/invoices/${id}/payments`, {
+      method: "POST",
+      body: JSON.stringify({ amount: 40, payment_date: "2026-03-06", method: "cash" }),
+    });
+
+    const view = await app.request(`/api/v1/public/invoices/${shareToken}`);
+    expect(view.status).toBe(200);
+    expect(((await view.json()) as any).data.invoice.status).toBe("partially_paid");
+  });
+
+  test("a draft still cannot be published", async () => {
+    const res = await authed("/api/v1/invoices", {
+      method: "POST",
+      body: JSON.stringify({
+        customer_id: customerId,
+        issue_date: "2026-03-03",
+        items: [{ description: "Draft", quantity: 1, unit_price: 10, tax_rate: 0 }],
+      }),
+    });
+    const id = ((await res.json()) as any).data.id;
+    const pub = await authed(`/api/v1/invoices/${id}/publish`, { method: "POST" });
+    expect(pub.status).toBe(400);
+  });
+});
