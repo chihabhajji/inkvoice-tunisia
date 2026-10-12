@@ -238,6 +238,11 @@ const invoiceSchema = z.object({
   exchange_rate: z.number().positive().optional(),
   discount_type: z.enum(["percentage", "amount"]).optional().nullable(),
   discount_value: z.number().min(0).optional(),
+  // Early-payment discount. On update, an omitted field keeps the stored
+  // value and null clears it.
+  cash_discount_type: z.enum(["percentage", "amount"]).optional().nullable(),
+  cash_discount_value: z.number().min(0).optional().nullable(),
+  cash_discount_days: z.number().int().min(0).max(3650).optional().nullable(),
   prices_include_tax: z.boolean().optional(),
   locale: z.string().max(10).optional().nullable(),
   template_id: z.string().optional().nullable(),

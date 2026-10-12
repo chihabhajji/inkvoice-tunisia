@@ -36,6 +36,9 @@ POST /api/v1/invoices
   "payment_terms": "Net 30",
   "discount_type": "percentage",
   "discount_value": 10,
+  "cash_discount_type": "percentage",
+  "cash_discount_value": 2,
+  "cash_discount_days": 14,
   "template_id": "template-uuid",
   "items": [
     {
@@ -65,6 +68,10 @@ PUT /api/v1/invoices/:id
 ```
 
 Same body as create. Only draft invoices can be edited.
+
+The cash-discount fields (`cash_discount_type`, `cash_discount_value`,
+`cash_discount_days`) are optional on update: a field left out of the body
+keeps its stored value, and `null` clears it.
 
 ## Delete Invoice
 

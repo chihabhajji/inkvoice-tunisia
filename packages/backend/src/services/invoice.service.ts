@@ -66,8 +66,8 @@ interface CreateInvoiceData {
   discount_type?: string | null;
   discount_value?: number;
   cash_discount_type?: string | null;
-  cash_discount_value?: number;
-  cash_discount_days?: number;
+  cash_discount_value?: number | null;
+  cash_discount_days?: number | null;
   locale?: string | null;
   template_id?: string | null;
   tags?: string[];
@@ -393,11 +393,34 @@ export function createInvoice(data: CreateInvoiceData): InvoiceWithItems {
 
 export function updateInvoice(id: string, data: CreateInvoiceData): InvoiceWithItems | null {
   const db = getDb();
-  const existing = db.query("SELECT id, status FROM invoices WHERE id = ?").get(id) as {
+  const existing = db
+    .query(
+      "SELECT id, status, cash_discount_type, cash_discount_value, cash_discount_days FROM invoices WHERE id = ?",
+    )
+    .get(id) as {
     id: string;
     status: string;
+    cash_discount_type: string | null;
+    cash_discount_value: number;
+    cash_discount_days: number;
   } | null;
   if (!existing || existing.status !== "draft") return null;
+
+  // Cash-discount fields are optional on update: a field the client leaves
+  // out keeps its stored value (older clients and the mobile app do not send
+  // them), while an explicit null clears it.
+  const cashDiscountType =
+    data.cash_discount_type === undefined
+      ? existing.cash_discount_type
+      : data.cash_discount_type || null;
+  const cashDiscountValue =
+    data.cash_discount_value === undefined
+      ? existing.cash_discount_value
+      : (data.cash_discount_value ?? 0);
+  const cashDiscountDays =
+    data.cash_discount_days === undefined
+      ? existing.cash_discount_days
+      : (data.cash_discount_days ?? 0);
 
   // Wrap in transaction for atomicity
   db.transaction(() => {
@@ -423,9 +446,9 @@ export function updateInvoice(id: string, data: CreateInvoiceData): InvoiceWithI
         data.discount_type || null,
         data.discount_value ?? 0,
         totals.discount_amount,
-        data.cash_discount_type || null,
-        data.cash_discount_value ?? 0,
-        data.cash_discount_days ?? 0,
+        cashDiscountType,
+        cashDiscountValue,
+        cashDiscountDays,
         totals.total,
         data.notes || null,
         data.payment_terms || null,

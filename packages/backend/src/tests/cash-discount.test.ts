@@ -1,10 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
+import { createApp } from "../app";
 import { closeDatabase, initDatabase } from "../database/connection";
 import { runMigrations } from "../database/migrations";
 import { seed } from "../database/seed";
 import { createCustomer } from "../services/customer.service";
-import { createInvoice, getInvoice, markSent } from "../services/invoice.service";
+import { createInvoice, getInvoice, markSent, updateInvoice } from "../services/invoice.service";
 import { deletePayment, recordPayment } from "../services/payment.service";
 import { cashDiscountDeadline, cashDiscountOn, hasCashDiscount } from "../utils/cash-discount";
 import { resetEnvCache } from "../utils/env";
@@ -167,5 +168,117 @@ describe("cash discount on invoices", () => {
     expect(loaded.amount_paid).toBe(0);
     expect(loaded.cash_discount_applied).toBe(0); // discount relinquished with the payment
     expect(loaded.status).toBe("sent");
+  });
+});
+
+describe("cash discount on draft edits", () => {
+  const baseUpdate = (customerId: string) => ({
+    customer_id: customerId,
+    issue_date: "2026-01-01",
+    items: [{ description: "Work, revised", quantity: 2, unit_price: 100 }],
+  });
+
+  function draftWithDiscount(customerId: string) {
+    return createInvoice({
+      customer_id: customerId,
+      issue_date: "2026-01-01",
+      items: [{ description: "Work", quantity: 1, unit_price: 200 }],
+      cash_discount_type: "percentage",
+      cash_discount_value: 3,
+      cash_discount_days: 10,
+    });
+  }
+
+  test("an update that omits the cash-discount fields keeps them", () => {
+    const customer = createCustomer({ name: "Keep Co" });
+    const inv = draftWithDiscount(customer.id);
+    const updated = updateInvoice(inv.id, baseUpdate(customer.id))!;
+    expect(updated.items[0].description).toBe("Work, revised");
+    expect(updated.cash_discount_type).toBe("percentage");
+    expect(updated.cash_discount_value).toBe(3);
+    expect(updated.cash_discount_days).toBe(10);
+  });
+
+  test("an update with explicit nulls clears them", () => {
+    const customer = createCustomer({ name: "Clear Co" });
+    const inv = draftWithDiscount(customer.id);
+    const updated = updateInvoice(inv.id, {
+      ...baseUpdate(customer.id),
+      cash_discount_type: null,
+      cash_discount_value: null,
+      cash_discount_days: null,
+    })!;
+    expect(updated.cash_discount_type).toBeNull();
+    expect(updated.cash_discount_value).toBe(0);
+    expect(updated.cash_discount_days).toBe(0);
+  });
+
+  test("an update can change the values", () => {
+    const customer = createCustomer({ name: "Change Co" });
+    const inv = draftWithDiscount(customer.id);
+    const updated = updateInvoice(inv.id, {
+      ...baseUpdate(customer.id),
+      cash_discount_type: "amount",
+      cash_discount_value: 15,
+      cash_discount_days: 7,
+    })!;
+    expect(updated.cash_discount_type).toBe("amount");
+    expect(updated.cash_discount_value).toBe(15);
+    expect(updated.cash_discount_days).toBe(7);
+  });
+
+  test("PUT /api/v1/invoices/:id keeps omitted fields and clears null ones", async () => {
+    const app = createApp();
+    const login = await app.request("/api/v1/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "admin", password: "testpass123" }),
+    });
+    const token = ((await login.json()) as any).data.token;
+    const headers = { Authorization: `Bearer ${token}`, "Content-Type": "application/json" };
+    const customer = createCustomer({ name: "Route Co" });
+
+    // Create through the API so the schema has to pass the fields through.
+    const created = await app.request("/api/v1/invoices", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        ...baseUpdate(customer.id),
+        cash_discount_type: "percentage",
+        cash_discount_value: 2,
+        cash_discount_days: 14,
+      }),
+    });
+    expect(created.status).toBe(201);
+    const id = ((await created.json()) as any).data.id;
+    expect(getInvoice(id)!.cash_discount_days).toBe(14);
+
+    const kept = await app.request(`/api/v1/invoices/${id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({ ...baseUpdate(customer.id), notes: "edited" }),
+    });
+    expect(kept.status).toBe(200);
+    const keptData = ((await kept.json()) as any).data;
+    expect(keptData.notes).toBe("edited");
+    expect(keptData.cash_discount_type).toBe("percentage");
+    expect(keptData.cash_discount_value).toBe(2);
+    expect(keptData.cash_discount_days).toBe(14);
+
+    const cleared = await app.request(`/api/v1/invoices/${id}`, {
+      method: "PUT",
+      headers,
+      body: JSON.stringify({
+        ...baseUpdate(customer.id),
+        cash_discount_type: null,
+        cash_discount_value: null,
+        cash_discount_days: null,
+      }),
+    });
+    expect(cleared.status).toBe(200);
+    const clearedData = ((await cleared.json()) as any).data;
+    expect(clearedData.cash_discount_type).toBeNull();
+    expect(clearedData.cash_discount_value).toBe(0);
+    expect(clearedData.cash_discount_days).toBe(0);
   });
 });
