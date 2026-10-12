@@ -73,6 +73,7 @@ All responses follow a consistent format:
 | [Quotes](/api/quotes) | `/api/v1/quotes` |
 | [Customers](/api/customers) | `/api/v1/customers` |
 | [Products](/api/products) | `/api/v1/products` |
+| [Expenses](/api/expenses) | `/api/v1/expenses` |
 | [Templates](/api/templates) | `/api/v1/templates` |
 | [Settings](/api/settings) | `/api/v1/settings` |
 | [Reports](/api/reports) | `/api/v1/reports` |

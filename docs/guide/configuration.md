@@ -34,6 +34,7 @@ The database is created automatically on first run. Back it up by copying this f
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `SESSION_TTL` | `3600` | JWT token lifetime in seconds |
+| `DEVICE_SESSION_IDLE_DAYS` | `90` | Days a mobile app sign-in stays valid without use. Each use extends it. |
 | `COOKIE_SECURE` | `true` | Use secure cookies (set to `false` for HTTP in development) |
 | `ENABLE_HSTS` | `false` | Enable HSTS header |
 | `RATE_LIMIT_ENABLED` | `true` | Enable login rate limiting |

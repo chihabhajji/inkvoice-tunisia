@@ -259,6 +259,86 @@ expenses.post("/:id/rebill", (c) => {
   return c.json({ success: true, data: { invoice_id: result.invoice_id } });
 });
 
+// --- Receipt file (photo or PDF) attached to an expense ---------------------
+
+// Upload or replace. multipart/form-data with the file in a `file` field
+// (`receipt` is accepted too). The type is detected from the bytes, so a phone
+// that labels a HEIC photo application/octet-stream still works.
+expenses.post("/:id/receipt", async (c) => {
+  const id = c.req.param("id");
+  if (!expenseService.getExpense(id)) {
+    return c.json({ success: false, error: "Expense not found" }, 404);
+  }
+  let body: Record<string, unknown>;
+  try {
+    body = await c.req.parseBody();
+  } catch {
+    return c.json({ success: false, error: "Expected a multipart/form-data upload" }, 400);
+  }
+  const file = body.file ?? body.receipt;
+  if (!file || !(file instanceof File)) {
+    return c.json({ success: false, error: "No file provided (multipart field 'file')" }, 400);
+  }
+  if (file.size > expenseService.MAX_RECEIPT_BYTES) {
+    return c.json({ success: false, error: "Receipt must be 10 MB or smaller" }, 413);
+  }
+  const result = expenseService.saveExpenseReceipt(id, {
+    name: file.name,
+    bytes: new Uint8Array(await file.arrayBuffer()),
+  });
+  if (!result.success) {
+    return c.json({ success: false, error: result.error }, result.status);
+  }
+  logActivity({
+    user_id: c.get("userId"),
+    user_name: c.get("user")?.username,
+    action: "updated",
+    resource_type: "expense",
+    resource_id: id,
+    metadata: { receipt: result.data.file_name, size: result.data.size },
+  });
+  return c.json({ success: true, data: expenseService.getExpense(id) }, 201);
+});
+
+// Download the stored file. Inline by default (for an <img> or a PDF viewer);
+// `?download=1` asks the browser to save it instead.
+expenses.get("/:id/receipt", (c) => {
+  const receipt = expenseService.getExpenseReceipt(c.req.param("id"));
+  if (!receipt) return c.json({ success: false, error: "Receipt not found" }, 404);
+  const disposition = c.req.query("download") ? "attachment" : "inline";
+  const asciiName = receipt.file_name.replace(/[^\x20-\x7e]/g, "_");
+  // c.header (not c.body's header argument) so these replace the app-wide
+  // CSP the security middleware already set.
+  c.header("Content-Type", receipt.content_type);
+  c.header("Content-Length", String(receipt.size));
+  c.header(
+    "Content-Disposition",
+    `${disposition}; filename="${asciiName}"; filename*=UTF-8''${encodeURIComponent(receipt.file_name)}`,
+  );
+  c.header("Content-Security-Policy", "default-src 'none'; sandbox");
+  c.header("Cache-Control", "private, no-store");
+  return c.body(receipt.content);
+});
+
+expenses.delete("/:id/receipt", (c) => {
+  const id = c.req.param("id");
+  if (!expenseService.getExpense(id)) {
+    return c.json({ success: false, error: "Expense not found" }, 404);
+  }
+  if (!expenseService.deleteExpenseReceipt(id)) {
+    return c.json({ success: false, error: "Receipt not found" }, 404);
+  }
+  logActivity({
+    user_id: c.get("userId"),
+    user_name: c.get("user")?.username,
+    action: "updated",
+    resource_type: "expense",
+    resource_id: id,
+    metadata: { receipt: null },
+  });
+  return c.json({ success: true, data: expenseService.getExpense(id) });
+});
+
 expenses.delete("/:id", (c) => {
   const id = c.req.param("id");
   const expense = expenseService.getExpense(id);

@@ -59,10 +59,12 @@ export default defineConfig({
           { text: "Quotes", link: "/api/quotes" },
           { text: "Customers", link: "/api/customers" },
           { text: "Products", link: "/api/products" },
+          { text: "Expenses", link: "/api/expenses" },
           { text: "Templates", link: "/api/templates" },
           { text: "Settings", link: "/api/settings" },
           { text: "Reports", link: "/api/reports" },
           { text: "Integrations", link: "/api/integrations" },
+          { text: "Mobile app", link: "/api/mobile" },
         ],
       },
       {

@@ -3,9 +3,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { toast } from "sonner";
 import { api } from "@/api/client";
-import { Slot } from "@/components/layout/slot-registry";
+import { hasSlot, Slot } from "@/components/layout/slot-registry";
 import { ApiTokensCard } from "@/components/shared/ApiTokensCard";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
+import { DeviceSessionsCard } from "@/components/shared/DeviceSessionsCard";
 import { FormField } from "@/components/shared/FormField";
 import { OutgoingWebhooksCard } from "@/components/shared/OutgoingWebhooksCard";
 import { PaymentTermsPicker } from "@/components/shared/PaymentTermsPicker";
@@ -552,53 +553,60 @@ export default function Settings() {
             </CardContent>
           </Card>
 
-          <Card className="mt-4">
-            <CardHeader>
-              <CardTitle className="text-sm">{t("settings.restore_section")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">
-                {t("settings.restore_description")}
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <input
-                  id="restore-file-input"
-                  type="file"
-                  accept=".db,application/octet-stream"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0] ?? null;
-                    setRestoreFile(f);
-                    if (f) setRestoreConfirmOpen(true);
-                    e.target.value = "";
-                  }}
-                />
-                <Button
-                  variant="outline"
-                  disabled={restoreBusy}
-                  onClick={() => document.getElementById("restore-file-input")?.click()}
-                >
-                  <Upload className="h-4 w-4 mr-2" /> {t("settings.restore_button")}
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
+          {/* A deployment can disable restore and wipe; the backend then refuses them. */}
+          {settings.destructive_db_ops !== "false" && (
+            <>
+              <Card className="mt-4">
+                <CardHeader>
+                  <CardTitle className="text-sm">{t("settings.restore_section")}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {t("settings.restore_description")}
+                  </p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <input
+                      id="restore-file-input"
+                      type="file"
+                      accept=".db,application/octet-stream"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] ?? null;
+                        setRestoreFile(f);
+                        if (f) setRestoreConfirmOpen(true);
+                        e.target.value = "";
+                      }}
+                    />
+                    <Button
+                      variant="outline"
+                      disabled={restoreBusy}
+                      onClick={() => document.getElementById("restore-file-input")?.click()}
+                    >
+                      <Upload className="h-4 w-4 mr-2" /> {t("settings.restore_button")}
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
 
-          <Card className="mt-4 border-destructive/50">
-            <CardHeader>
-              <CardTitle className="text-sm">{t("settings.wipe_section")}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground mb-4">{t("settings.wipe_description")}</p>
-              <Button
-                variant="destructive"
-                disabled={wipeBusy}
-                onClick={() => setWipeConfirmOpen(true)}
-              >
-                <Trash2 className="h-4 w-4 mr-2" /> {t("settings.wipe_button")}
-              </Button>
-            </CardContent>
-          </Card>
+              <Card className="mt-4 border-destructive/50">
+                <CardHeader>
+                  <CardTitle className="text-sm">{t("settings.wipe_section")}</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    {t("settings.wipe_description")}
+                  </p>
+                  <Button
+                    variant="destructive"
+                    disabled={wipeBusy}
+                    onClick={() => setWipeConfirmOpen(true)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" /> {t("settings.wipe_button")}
+                  </Button>
+                </CardContent>
+              </Card>
+            </>
+          )}
 
           <Card className="mt-4">
             <CardHeader>
@@ -1189,6 +1197,10 @@ export default function Settings() {
         </TabsContent>
 
         <TabsContent value="email" className="max-w-3xl">
+          {/* Overlay-provided mail server setup. It owns the SMTP status and the
+              test email, so the environment-variable hint and the test control
+              below only show without it. */}
+          <Slot name="settings-email" />
           <Card className="mt-4">
             <CardHeader>
               <CardTitle className="text-sm flex items-center gap-2">
@@ -1196,19 +1208,23 @@ export default function Settings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-muted-foreground">{t("settings.smtp_status")}</span>
-                {settings.email_configured === "true" ? (
-                  <span className="text-emerald-600 font-medium">
-                    {t("settings.smtp_configured")}
-                  </span>
-                ) : (
-                  <span className="text-amber-600 font-medium">
-                    {t("settings.smtp_not_configured")}
-                  </span>
-                )}
-              </div>
-              <p className="text-sm text-muted-foreground">{t("settings.smtp_info")}</p>
+              {!hasSlot("settings-email") && (
+                <>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-muted-foreground">{t("settings.smtp_status")}</span>
+                    {settings.email_configured === "true" ? (
+                      <span className="text-emerald-600 font-medium">
+                        {t("settings.smtp_configured")}
+                      </span>
+                    ) : (
+                      <span className="text-amber-600 font-medium">
+                        {t("settings.smtp_not_configured")}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-sm text-muted-foreground">{t("settings.smtp_info")}</p>
+                </>
+              )}
               <FormField label={t("settings.from_name")} hint={t("settings.from_name_hint")}>
                 <Input
                   value={settings.email_from_name || ""}
@@ -1259,7 +1275,7 @@ export default function Settings() {
                   {t("settings.email_template_variables")}
                 </p>
               </div>
-              {settings.email_configured === "true" && (
+              {settings.email_configured === "true" && !hasSlot("settings-email") && (
                 <div className="pt-2 border-t">
                   <p className="text-sm font-medium mb-2">{t("settings.test_connection")}</p>
                   <div className="flex gap-2">
@@ -1468,6 +1484,7 @@ export default function Settings() {
         </TabsContent>
         <TabsContent value="api" className="max-w-3xl">
           <ApiTokensCard />
+          <DeviceSessionsCard />
         </TabsContent>
 
         {getSettingsTabs()

@@ -1088,6 +1088,55 @@ const MIGRATIONS: Migration[] = [
       }
     },
   },
+  {
+    version: 31,
+    name: "device_sessions",
+    up: (db) => {
+      // Sign-in sessions for the mobile app. The bearer token is an opaque
+      // `ink_dev_` string; only its SHA-256 hash is stored. `expires_at`
+      // slides forward on use (DEVICE_SESSION_IDLE_DAYS), and revocation is
+      // immediate because every request looks the row up.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS device_sessions (
+          id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
+          user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          token_hash TEXT NOT NULL UNIQUE,
+          token_prefix TEXT NOT NULL,
+          name TEXT NOT NULL,
+          platform TEXT NOT NULL,
+          model TEXT,
+          os_version TEXT,
+          app_version TEXT,
+          created_at TEXT DEFAULT (datetime('now')),
+          last_seen_at TEXT,
+          last_seen_ip TEXT,
+          expires_at TEXT NOT NULL,
+          revoked_at TEXT,
+          revoked_reason TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_device_sessions_user ON device_sessions(user_id);
+      `);
+    },
+  },
+  {
+    version: 32,
+    name: "expense_receipts",
+    up: (db) => {
+      // One uploaded receipt (photo or PDF) per expense. Stored in the
+      // database like the e-invoice inbox's raw files, so a DB backup carries
+      // it and there is no separate upload directory to mount.
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS expense_receipts (
+          expense_id TEXT PRIMARY KEY REFERENCES expenses(id) ON DELETE CASCADE,
+          file_name TEXT NOT NULL,
+          content_type TEXT NOT NULL,
+          size INTEGER NOT NULL,
+          content BLOB NOT NULL,
+          created_at TEXT DEFAULT (datetime('now'))
+        );
+      `);
+    },
+  },
 ];
 
 export const LATEST_MIGRATION_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;

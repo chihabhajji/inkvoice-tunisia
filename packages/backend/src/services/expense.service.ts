@@ -98,6 +98,20 @@ function buildFilters(params: Partial<ExpenseListParams>): {
 export interface ExpenseRow extends Expense {
   customer_name: string | null;
   tax_name: string | null;
+  /** 1 when a receipt file is attached (see `/expenses/:id/receipt`). */
+  has_receipt: number;
+}
+
+/** What a client sees about an attached receipt; the bytes come from the receipt endpoint. */
+export interface ExpenseReceiptMeta {
+  file_name: string;
+  content_type: string;
+  size: number;
+  created_at: string;
+}
+
+export interface ExpenseDetail extends ExpenseRow {
+  receipt: ExpenseReceiptMeta | null;
 }
 
 export function listExpenses(params: ExpenseListParams): PaginatedResponse<ExpenseRow> {
@@ -112,7 +126,8 @@ export function listExpenses(params: ExpenseListParams): PaginatedResponse<Expen
 
   const items = db
     .query(
-      `SELECT e.*, c.name as customer_name, t.name as tax_name
+      `SELECT e.*, c.name as customer_name, t.name as tax_name,
+       EXISTS (SELECT 1 FROM expense_receipts r WHERE r.expense_id = e.id) as has_receipt
        FROM expenses e
        LEFT JOIN customers c ON e.customer_id = c.id
        LEFT JOIN tax_definitions t ON e.tax_id = t.id
@@ -135,7 +150,8 @@ export function listExpensesForExport(params: Partial<ExpenseListParams>): Expen
   const { where, queryParams } = buildFilters(params);
   return db
     .query(
-      `SELECT e.*, c.name as customer_name, t.name as tax_name
+      `SELECT e.*, c.name as customer_name, t.name as tax_name,
+       EXISTS (SELECT 1 FROM expense_receipts r WHERE r.expense_id = e.id) as has_receipt
        FROM expenses e
        LEFT JOIN customers c ON e.customer_id = c.id
        LEFT JOIN tax_definitions t ON e.tax_id = t.id
@@ -145,17 +161,20 @@ export function listExpensesForExport(params: Partial<ExpenseListParams>): Expen
     .all(...queryParams) as ExpenseRow[];
 }
 
-export function getExpense(id: string): ExpenseRow | null {
+export function getExpense(id: string): ExpenseDetail | null {
   const db = getDb();
-  return db
+  const row = db
     .query(
-      `SELECT e.*, c.name as customer_name, t.name as tax_name
+      `SELECT e.*, c.name as customer_name, t.name as tax_name,
+       EXISTS (SELECT 1 FROM expense_receipts r WHERE r.expense_id = e.id) as has_receipt
        FROM expenses e
        LEFT JOIN customers c ON e.customer_id = c.id
        LEFT JOIN tax_definitions t ON e.tax_id = t.id
        WHERE e.id = ?`,
     )
     .get(id) as ExpenseRow | null;
+  if (!row) return null;
+  return { ...row, receipt: getExpenseReceiptMeta(id) };
 }
 
 export function createExpense(data: Partial<Expense>): Expense {
@@ -197,8 +216,18 @@ export function createExpense(data: Partial<Expense>): Expense {
 
 export function updateExpense(id: string, data: Partial<Expense>): Expense | null {
   const db = getDb();
-  const existing = db.query("SELECT id FROM expenses WHERE id = ?").get(id);
+  const existing = db.query("SELECT id, receipt_reference FROM expenses WHERE id = ?").get(id) as {
+    id: string;
+    receipt_reference: string | null;
+  } | null;
   if (!existing) return null;
+
+  // A client that does not send receipt_reference (the mobile app edits an
+  // expense without it) keeps the stored one; an empty string clears it.
+  const receiptReference =
+    data.receipt_reference === undefined
+      ? existing.receipt_reference
+      : data.receipt_reference || null;
 
   const amount = data.amount ?? 0;
   const { tax_id, tax_rate, tax_amount, total } = deriveTotals(
@@ -224,7 +253,7 @@ export function updateExpense(id: string, data: Partial<Expense>): Expense | nul
       total,
       data.currency || "USD",
       resolveExchangeRate(data.currency, data.exchange_rate),
-      data.receipt_reference || null,
+      receiptReference,
       data.customer_id || null,
       data.is_billable ?? 0,
       data.notes || null,
@@ -239,8 +268,179 @@ export function deleteExpense(id: string): { success: boolean; error?: string } 
   const db = getDb();
   const existing = db.query("SELECT id FROM expenses WHERE id = ?").get(id);
   if (!existing) return { success: false, error: "Expense not found" };
-  db.run("DELETE FROM expenses WHERE id = ?", [id]);
+  db.transaction(() => {
+    // The FK cascades too; deleting explicitly keeps it true even on a
+    // connection opened without foreign_keys.
+    db.run("DELETE FROM expense_receipts WHERE expense_id = ?", [id]);
+    db.run("DELETE FROM expenses WHERE id = ?", [id]);
+  })();
   return { success: true };
+}
+
+// ---------------------------------------------------------------------------
+// Receipts: one uploaded file (photo or PDF) per expense, stored as a BLOB.
+// ---------------------------------------------------------------------------
+
+export const MAX_RECEIPT_BYTES = 10 * 1024 * 1024;
+
+export const RECEIPT_CONTENT_TYPES = [
+  "image/jpeg",
+  "image/png",
+  "image/heic",
+  "application/pdf",
+] as const;
+
+export type ReceiptContentType = (typeof RECEIPT_CONTENT_TYPES)[number];
+
+const HEIC_BRANDS = new Set(["heic", "heix", "heim", "heis", "hevc", "hevx", "mif1", "msf1"]);
+
+/**
+ * Identify a receipt by its leading bytes rather than trusting the declared
+ * Content-Type, so a renamed HTML or SVG file can never be stored and served
+ * back as a "receipt". Returns null for anything that is not one of the
+ * accepted formats.
+ */
+export function sniffReceiptType(bytes: Uint8Array): ReceiptContentType | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (
+    bytes.length >= 8 &&
+    bytes[0] === 0x89 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x4e &&
+    bytes[3] === 0x47 &&
+    bytes[4] === 0x0d &&
+    bytes[5] === 0x0a &&
+    bytes[6] === 0x1a &&
+    bytes[7] === 0x0a
+  ) {
+    return "image/png";
+  }
+  if (
+    bytes.length >= 5 &&
+    bytes[0] === 0x25 &&
+    bytes[1] === 0x50 &&
+    bytes[2] === 0x44 &&
+    bytes[3] === 0x46 &&
+    bytes[4] === 0x2d
+  ) {
+    return "application/pdf";
+  }
+  // ISO-BMFF: [size:4]["ftyp"][major brand:4]
+  if (bytes.length >= 12) {
+    const box = String.fromCharCode(bytes[4], bytes[5], bytes[6], bytes[7]);
+    const brand = String.fromCharCode(bytes[8], bytes[9], bytes[10], bytes[11]);
+    if (box === "ftyp" && HEIC_BRANDS.has(brand)) return "image/heic";
+  }
+  return null;
+}
+
+function safeReceiptFileName(name: string | undefined, type: ReceiptContentType): string {
+  const ext: Record<ReceiptContentType, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/heic": "heic",
+    "application/pdf": "pdf",
+  };
+  // Keep a readable name but drop path parts, control and quote characters.
+  const last = (name || "").split(/[\\/]/).pop() ?? "";
+  const base = Array.from(last)
+    .filter((ch) => {
+      const code = ch.charCodeAt(0);
+      return code >= 0x20 && code !== 0x7f && ch !== '"';
+    })
+    .join("")
+    .trim()
+    .slice(0, 200);
+  return base || `receipt.${ext[type]}`;
+}
+
+export function getExpenseReceiptMeta(expenseId: string): ExpenseReceiptMeta | null {
+  return getDb()
+    .query(
+      "SELECT file_name, content_type, size, created_at FROM expense_receipts WHERE expense_id = ?",
+    )
+    .get(expenseId) as ExpenseReceiptMeta | null;
+}
+
+export function getExpenseReceipt(
+  expenseId: string,
+): (ExpenseReceiptMeta & { content: Uint8Array<ArrayBuffer> }) | null {
+  const row = getDb()
+    .query(
+      "SELECT file_name, content_type, size, created_at, content FROM expense_receipts WHERE expense_id = ?",
+    )
+    .get(expenseId) as (ExpenseReceiptMeta & { content: Uint8Array }) | null;
+  return row ? { ...row, content: new Uint8Array(row.content) } : null;
+}
+
+export type SaveReceiptResult =
+  | { success: true; data: ExpenseReceiptMeta }
+  | { success: false; status: 400 | 404 | 413; error: string };
+
+/**
+ * Attach (or replace) the receipt for an expense and point
+ * `receipt_reference` at it. The stored type is the sniffed one, never the
+ * client's claim.
+ */
+export function saveExpenseReceipt(
+  expenseId: string,
+  file: { name?: string; bytes: Uint8Array },
+): SaveReceiptResult {
+  const db = getDb();
+  const expense = db.query("SELECT id FROM expenses WHERE id = ?").get(expenseId);
+  if (!expense) return { success: false, status: 404, error: "Expense not found" };
+  if (file.bytes.length === 0) return { success: false, status: 400, error: "File is empty" };
+  if (file.bytes.length > MAX_RECEIPT_BYTES) {
+    return { success: false, status: 413, error: "Receipt must be 10 MB or smaller" };
+  }
+  const type = sniffReceiptType(file.bytes);
+  if (!type) {
+    return {
+      success: false,
+      status: 400,
+      error: "Unsupported file type. Allowed: JPEG, PNG, HEIC, PDF",
+    };
+  }
+  const fileName = safeReceiptFileName(file.name, type);
+
+  db.transaction(() => {
+    db.run(
+      `INSERT INTO expense_receipts (expense_id, file_name, content_type, size, content)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(expense_id) DO UPDATE SET file_name = excluded.file_name,
+         content_type = excluded.content_type, size = excluded.size,
+         content = excluded.content, created_at = datetime('now')`,
+      [expenseId, fileName, type, file.bytes.length, file.bytes],
+    );
+    db.run("UPDATE expenses SET receipt_reference = ?, updated_at = datetime('now') WHERE id = ?", [
+      fileName,
+      expenseId,
+    ]);
+  })();
+
+  return { success: true, data: getExpenseReceiptMeta(expenseId)! };
+}
+
+/**
+ * Remove an expense's receipt. `receipt_reference` is cleared only when it
+ * still names the uploaded file, so a reference the user typed by hand
+ * afterwards survives.
+ */
+export function deleteExpenseReceipt(expenseId: string): boolean {
+  const db = getDb();
+  const meta = getExpenseReceiptMeta(expenseId);
+  if (!meta) return false;
+  db.transaction(() => {
+    db.run("DELETE FROM expense_receipts WHERE expense_id = ?", [expenseId]);
+    db.run(
+      `UPDATE expenses SET receipt_reference = NULL, updated_at = datetime('now')
+       WHERE id = ? AND receipt_reference = ?`,
+      [expenseId, meta.file_name],
+    );
+  })();
+  return true;
 }
 
 /**

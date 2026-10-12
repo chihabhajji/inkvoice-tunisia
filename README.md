@@ -222,6 +222,7 @@ Copy `.env.example` to `.env` to bootstrap a local config. Most runtime knobs (c
 | `PORT`                    | no       | `3000`                | HTTP listen port                                                     |
 | `HOST`                    | no       | `0.0.0.0`             | Bind address                                                         |
 | `SESSION_TTL`             | no       | `3600`                | JWT lifetime in seconds                                              |
+| `DEVICE_SESSION_IDLE_DAYS` | no      | `90`                  | Idle days before a mobile app sign-in expires (sliding)              |
 | `COOKIE_SECURE`           | no       | `true`                | Set to `false` for plain-HTTP development                            |
 | `ENABLE_HSTS`             | no       | `false`               | Send HSTS header (set to `true` behind HTTPS)                        |
 | `RATE_LIMIT_ENABLED`      | no       | `true`                | Enable login rate limiting                                           |

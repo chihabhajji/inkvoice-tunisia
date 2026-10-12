@@ -7,10 +7,38 @@ import { closeDatabase, getDb, initDatabase } from "../database/connection";
 import { runMigrations } from "../database/migrations";
 import { seed } from "../database/seed";
 import { runPluginMigrations } from "../plugins/runner";
+import { stripInternalSettings } from "../services/settings.service";
 import { todayIso } from "../utils/date";
 import { getEnv } from "../utils/env";
 
 const exportRoutes = new Hono();
+
+// Extension point: a deployment where the admin downloading a snapshot is not
+// the server operator (e.g. one database per customer workspace) registers a
+// sanitizer that strips credentials (teammates' password hashes, tokens) from
+// the copy before it is sent. It runs on the temporary snapshot, never on the
+// live database, and a sanitizer that throws fails the download.
+export type SnapshotSanitizer = (snapshot: Database, ctx: { userId: string | null }) => void;
+
+let snapshotSanitizer: SnapshotSanitizer | null = null;
+
+export function setSnapshotSanitizer(sanitizer: SnapshotSanitizer | null): void {
+  snapshotSanitizer = sanitizer;
+}
+
+function sanitizeSnapshot(path: string, userId: string | null): void {
+  if (!snapshotSanitizer) return;
+  const snapshot = new Database(path);
+  try {
+    // Zero what the sanitizer deletes, then rebuild the file so none of it
+    // survives in freed pages.
+    snapshot.exec("PRAGMA secure_delete = ON");
+    snapshotSanitizer(snapshot, { userId });
+    snapshot.exec("VACUUM");
+  } finally {
+    snapshot.close();
+  }
+}
 
 exportRoutes.get("/backup", (c) => {
   const db = getDb();
@@ -19,12 +47,17 @@ exportRoutes.get("/backup", (c) => {
     key: string;
     value: string;
   }[];
-  const settingsObj = Object.fromEntries(settings.map((s) => [s.key, s.value]));
+  const settingsObj = stripInternalSettings(
+    Object.fromEntries(settings.map((s) => [s.key, s.value])),
+  );
 
   const customers = db.query("SELECT * FROM customers").all();
   const products = db.query("SELECT * FROM products").all();
   const taxDefinitions = db.query("SELECT * FROM tax_definitions").all();
-  const invoices = db.query("SELECT * FROM invoices").all();
+  // Share tokens open (and pay) the invoice; a backup file has no use for them.
+  const invoices = (db.query("SELECT * FROM invoices").all() as Record<string, unknown>[]).map(
+    ({ share_token: _shareToken, ...invoice }) => invoice,
+  );
   const invoiceItems = db.query("SELECT * FROM invoice_items").all();
   const templates = db.query("SELECT * FROM templates").all();
   const users = db
@@ -90,6 +123,7 @@ exportRoutes.get("/sqlite", (c) => {
     if (!existsSync(tmpPath)) {
       return c.json({ success: false, error: "Snapshot creation failed" }, 500);
     }
+    sanitizeSnapshot(tmpPath, c.get("user")?.sub ?? null);
 
     const buf = readFileSync(tmpPath);
 
@@ -127,6 +161,10 @@ let destructiveDbOpsEnabled = true;
 
 export function setDestructiveDbOpsEnabled(enabled: boolean): void {
   destructiveDbOpsEnabled = enabled;
+}
+
+export function isDestructiveDbOpsEnabled(): boolean {
+  return destructiveDbOpsEnabled;
 }
 
 /**
@@ -242,6 +280,7 @@ exportRoutes.post("/wipe", async (c) => {
     "payments",
     "reminder_log",
     "activity_log",
+    "expense_receipts",
     "expenses",
     "recurring_invoices",
     "invoices",

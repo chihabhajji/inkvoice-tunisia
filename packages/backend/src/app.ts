@@ -16,6 +16,7 @@ import { apiTokens } from "./routes/api-tokens";
 import { auth } from "./routes/auth";
 import { customers } from "./routes/customers";
 import { dashboard } from "./routes/dashboard";
+import { deviceSessions } from "./routes/device-sessions";
 import { einvoices } from "./routes/einvoice";
 import { exchangeRate } from "./routes/exchange-rate";
 import { expenses } from "./routes/expenses";
@@ -101,10 +102,15 @@ export function createApp(options?: CreateAppOptions): Hono {
     return c.text("404 Not Found", 404);
   });
 
-  // Request body size limit (10MB)
+  // Request body size limit (10MB). An expense receipt upload may carry a
+  // full 10 MB file, so it gets 1 MB of headroom for the multipart framing;
+  // the route itself enforces the 10 MB file limit.
   app.use("*", async (c: Context, next: Next) => {
     const contentLength = parseInt(c.req.header("content-length") || "0", 10);
-    if (contentLength > 10 * 1024 * 1024) {
+    const limit = /^\/api\/v1\/expenses\/[^/]+\/receipt$/.test(c.req.path)
+      ? 11 * 1024 * 1024
+      : 10 * 1024 * 1024;
+    if (contentLength > limit) {
       return c.json({ success: false, error: "Request too large" }, 413);
     }
     await next();
@@ -118,6 +124,7 @@ export function createApp(options?: CreateAppOptions): Hono {
 
   // Public routes (no auth required)
   app.route("/api/v1/auth", auth);
+  app.route("/api/v1/auth/device-sessions", deviceSessions);
   app.route("/api/v1/auth/oidc", oidcRoutes);
   app.route("/api/v1/public", publicRoutes);
   app.route("/api/v1/webhooks", webhooks);
@@ -144,6 +151,9 @@ export function createApp(options?: CreateAppOptions): Hono {
   app.use("/api/v1/settings", adminOnly);
   app.use("/api/v1/export/*", adminOnly);
   app.use("/api/v1/export", adminOnly);
+  // Webhooks decide where invoice events go, and a Slack URL is a credential.
+  app.use("/api/v1/outgoing-webhooks/*", adminOnly);
+  app.use("/api/v1/outgoing-webhooks", adminOnly);
 
   app.route("/api/v1/invoices", invoices);
   app.route("/api/v1/einvoices", einvoices);

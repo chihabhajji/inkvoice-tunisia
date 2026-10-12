@@ -5,6 +5,7 @@ import { createApp } from "../app";
 import { closeDatabase, initDatabase } from "../database/connection";
 import { runMigrations } from "../database/migrations";
 import { seed } from "../database/seed";
+import { setPublicConfigExtender } from "../routes/public";
 import { getEnv, resetEnvCache } from "../utils/env";
 
 const TEST_DB = "./data/test-public-config.db";
@@ -145,5 +146,55 @@ describe("GET /api/v1/public/config", () => {
     delete process.env.OIDC_CLIENT_SECRET;
     delete process.env.OIDC_PROVIDER_NAME;
     resetEnvCache();
+  });
+});
+
+describe("GET /api/v1/public/config server info", () => {
+  async function getRaw(): Promise<Record<string, any>> {
+    const res = await app.request("/api/v1/public/config");
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { data: Record<string, any> }).data;
+  }
+
+  test("reports server, auth, features and mobile fields", async () => {
+    setEnv({ user: "admin", pass: "publicconfigtestpass" });
+    const data = await getRaw();
+    const { version } = await import("../../package.json");
+    expect(data.server).toEqual({ version, api_level: 1 });
+    expect(data.auth).toEqual({
+      password: true,
+      device_sessions: true,
+      oidc: { enabled: false, label: null, mobile: false },
+      oauth: [],
+    });
+    expect(data.features).toEqual({
+      push: false,
+      attachments: false,
+      idempotency: false,
+      receipt_upload: true,
+      partial_share_links: true,
+    });
+    expect(data.mobile).toEqual({ min_app_version: null });
+    // The fields the web login page already reads are still there.
+    expect(data.oidc_enabled).toBe(false);
+    expect(data.oidc_provider_name).toBeNull();
+    expect(data.demo_mode).toBe(false);
+  });
+
+  test("a registered extender can merge extra fields", async () => {
+    setPublicConfigExtender((data) => ({
+      ...data,
+      auth: { ...(data.auth as object), oauth: [{ id: "google", label: "Google" }] },
+      workspace: { name: "Acme" },
+    }));
+    try {
+      const data = await getRaw();
+      expect(data.auth.oauth).toEqual([{ id: "google", label: "Google" }]);
+      expect(data.auth.device_sessions).toBe(true);
+      expect(data.workspace).toEqual({ name: "Acme" });
+    } finally {
+      setPublicConfigExtender(null);
+    }
+    expect((await getRaw()).workspace).toBeUndefined();
   });
 });

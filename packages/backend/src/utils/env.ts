@@ -43,6 +43,8 @@ export interface Env {
   OIDC_PROVIDER_NAME: string;
   PUBLIC_BASE_URL: string;
   OIDC_ENABLED: boolean;
+  /** Days a mobile device session stays valid without use (sliding). */
+  DEVICE_SESSION_IDLE_DAYS: number;
 }
 
 /**
@@ -176,6 +178,10 @@ export function getEnv(): Env {
       return true;
     })(),
     PUBLIC_BASE_URL: (process.env.PUBLIC_BASE_URL || "").replace(/\/+$/, ""),
+    DEVICE_SESSION_IDLE_DAYS: (() => {
+      const days = parseInt(process.env.DEVICE_SESSION_IDLE_DAYS || "90", 10);
+      return Number.isFinite(days) && days > 0 ? days : 90;
+    })(),
   };
 
   return cachedEnv;

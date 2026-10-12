@@ -2,9 +2,15 @@ import type { Context, Next } from "hono";
 import { getCookie } from "hono/cookie";
 import { getDb } from "../database/connection";
 import { findActiveTokenByHash, hashToken, touchLastUsed } from "../services/api-token.service";
+import {
+  DEVICE_TOKEN_PREFIX,
+  findActiveDeviceSession,
+  touchDeviceSession,
+} from "../services/device-session.service";
 import type { Action, Resource } from "../types/user";
 import { CURRENT_JWT_VERSION, type JWTPayload, verifyToken } from "../utils/jwt";
 import { roleAllows } from "../utils/permissions";
+import { clientIp } from "./rate-limiter";
 
 declare module "hono" {
   interface ContextVariableMap {
@@ -12,6 +18,8 @@ declare module "hono" {
     userId: string;
     /** Set when the request was authenticated with a public API token. */
     apiToken?: { id: string; scopes: string[] };
+    /** Set when the request was authenticated with a mobile device session. */
+    deviceSession?: { id: string };
     /** Set by a multi-tenant overlay's middleware. Undefined standalone. */
     tenant?: { id: string; slug: string; status: string; plan: string };
   }
@@ -27,6 +35,12 @@ export async function authMiddleware(c: Context, next: Next) {
   const authHeader = c.req.header("Authorization");
   if (authHeader?.startsWith("Bearer ")) {
     token = authHeader.slice(7);
+  }
+
+  // Mobile device sessions. Checked before the API-token branch because
+  // `ink_dev_` also starts with `ink_`.
+  if (token?.startsWith(DEVICE_TOKEN_PREFIX)) {
+    return authenticateDeviceSession(c, next, token);
   }
 
   // Bearer tokens with the API-token prefix are long-lived integration tokens,
@@ -111,6 +125,42 @@ async function authenticateApiToken(c: Context, next: Next, token: string) {
   c.set("user", payload);
   c.set("userId", user.id);
   c.set("apiToken", { id: tokenRow.id, scopes: tokenRow.scopes });
+  await next();
+}
+
+async function authenticateDeviceSession(c: Context, next: Next, token: string) {
+  const session = findActiveDeviceSession(token);
+  if (!session) {
+    return c.json({ success: false, error: "Invalid or expired session" }, 401);
+  }
+
+  const db = getDb();
+  const user = db
+    .query("SELECT id, username, is_admin FROM users WHERE id = ? AND is_active = 1")
+    .get(session.user_id) as { id: string; username: string; is_admin: number } | null;
+  if (!user) {
+    return c.json({ success: false, error: "Account deactivated" }, 401);
+  }
+
+  // Same tenancy model as API tokens: the session row lives in exactly one
+  // tenant's DB, so a token presented on another tenant finds no row.
+  const tenant = c.get("tenant") as { id: string } | undefined;
+  const payload: JWTPayload = {
+    sub: user.id,
+    username: user.username,
+    // Read fresh on every request, so a demotion applies immediately.
+    is_admin: !!user.is_admin,
+    tenant_id: tenant?.id,
+    v: CURRENT_JWT_VERSION,
+    // The session row's sliding expires_at is the real lifetime.
+    exp: Math.floor(Date.now() / 1000) + 31_536_000,
+  };
+
+  const ip = clientIp(c);
+  touchDeviceSession(session, ip === "unknown" ? null : ip);
+  c.set("user", payload);
+  c.set("userId", user.id);
+  c.set("deviceSession", { id: session.id });
   await next();
 }
 

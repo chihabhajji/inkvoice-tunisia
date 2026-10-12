@@ -17,6 +17,12 @@ export interface ResolvedSmtp {
   pass?: string;
   fromAddress?: string;
   fromName?: string;
+  /**
+   * Refuse to continue unless the server upgrades with STARTTLS. Without it a
+   * non-`secure` connection authenticates in clear text whenever the server
+   * (or an attacker in between) does not offer STARTTLS.
+   */
+  requireTLS?: boolean;
 }
 
 export type TenantSmtpResolver = () => Promise<ResolvedSmtp | null>;
@@ -44,6 +50,7 @@ async function buildTransporter(cfg: ResolvedSmtp): Promise<Transporter> {
     host: cfg.host,
     port: cfg.port,
     secure: cfg.secure,
+    requireTLS: cfg.requireTLS,
     auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
   });
 }

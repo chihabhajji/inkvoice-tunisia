@@ -1354,6 +1354,22 @@ const fr: TranslationKeys = {
       "Toute intégration utilisant ce jeton cessera immédiatement de fonctionner. Cette action est irréversible.",
   },
 
+  // Signed-in devices (Settings → API, mobile app sessions)
+  device_sessions: {
+    title: "Appareils connectés",
+    info: "Téléphones et tablettes connectés à l'application mobile Inkvoice avec votre compte. Révoquez un appareil pour le déconnecter immédiatement.",
+    empty: "Aucun appareil connecté.",
+    platform_ios: "iOS",
+    platform_android: "Android",
+    last_seen: "Dernière activité {{time}}",
+    never_seen: "Pas encore utilisé",
+    revoke: "Révoquer",
+    revoked: "Appareil déconnecté",
+    confirm_revoke_title: "Déconnecter cet appareil ?",
+    confirm_revoke_body:
+      "L'application sur cet appareil sera déconnectée immédiatement et demandera votre mot de passe pour se reconnecter.",
+  },
+
   // Règles de rappel (Paramètres → Rappels)
   reminder_rules: {
     title: "Calendrier des rappels",

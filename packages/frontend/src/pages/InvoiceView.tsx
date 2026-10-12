@@ -430,7 +430,7 @@ export default function InvoiceView({ onBack }: Props) {
                   <Ban className="h-4 w-4 mr-2" /> {t("invoices.void")}
                 </DropdownMenuItem>
               )}
-              {["sent", "paid", "overdue", "complete"].includes(invoice.status) &&
+              {["sent", "partially_paid", "paid", "overdue", "complete"].includes(invoice.status) &&
                 !invoice.is_published && (
                   <DropdownMenuItem onClick={handlePublish}>
                     <Globe className="h-4 w-4 mr-2" /> {t("invoices.publish")}

@@ -7,6 +7,7 @@ import { authMiddleware } from "../middleware/auth";
 import { bucketRateLimiter, rateLimiter } from "../middleware/rate-limiter";
 import { logActivity } from "../services/activity.service";
 import { getCurrentUser, login } from "../services/auth.service";
+import { revokeAllDeviceSessions } from "../services/device-session.service";
 import { sendEmail } from "../services/email.service";
 import { passwordResetEmail } from "../services/email-templates";
 import { getSystemMailSender } from "../services/system-mail";
@@ -174,6 +175,9 @@ auth.post("/reset-password", bucketRateLimiter("reset-password", 10, 3600), asyn
       "UPDATE password_reset_tokens SET consumed_at = datetime('now') WHERE user_id = ? AND consumed_at IS NULL",
       [row.user_id],
     );
+    // A reset usually means the old password was lost or leaked: sign out
+    // every phone that signed in with it.
+    revokeAllDeviceSessions(row.user_id, "password_reset");
   })();
 
   logActivity({

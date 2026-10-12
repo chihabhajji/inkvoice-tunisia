@@ -2,9 +2,10 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { unlinkSync } from "node:fs";
 import type { Hono } from "hono";
 import { createApp } from "../app";
-import { closeDatabase, initDatabase } from "../database/connection";
+import { closeDatabase, getDb, initDatabase } from "../database/connection";
 import { runMigrations } from "../database/migrations";
 import { seed } from "../database/seed";
+import { sniffReceiptType } from "../services/expense.service";
 import { resetEnvCache } from "../utils/env";
 
 const TEST_DB = "./data/test-expenses.db";
@@ -181,5 +182,165 @@ describe("Expenses", () => {
     expect(res.status).toBe(200);
     const after = await authed("/api/v1/expenses");
     expect(((await after.json()) as any).data.total).toBe(0);
+  });
+});
+
+describe("Expense receipts", () => {
+  const PNG = new Uint8Array([
+    0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
+  ]);
+  const PDF = new TextEncoder().encode("%PDF-1.4\n%receipt\n");
+
+  async function newExpense(): Promise<string> {
+    const res = await authed("/api/v1/expenses", {
+      method: "POST",
+      body: JSON.stringify({ vendor: "Receipt Shop", expense_date: "2026-05-01", amount: 12 }),
+    });
+    return ((await res.json()) as any).data.id;
+  }
+
+  function upload(
+    id: string,
+    bytes: Uint8Array<ArrayBuffer>,
+    name: string,
+    type: string,
+    field = "file",
+  ) {
+    const form = new FormData();
+    form.append(field, new File([bytes], name, { type }));
+    return authed(`/api/v1/expenses/${id}/receipt`, { method: "POST", body: form });
+  }
+
+  test("uploads, serves, replaces and deletes a receipt", async () => {
+    const id = await newExpense();
+
+    const up = await upload(id, PNG, "lunch.png", "image/png");
+    expect(up.status).toBe(201);
+    const upData = ((await up.json()) as any).data;
+    expect(upData.id).toBe(id);
+    expect(upData.receipt_reference).toBe("lunch.png");
+    expect(upData.has_receipt).toBe(1);
+    expect(upData.receipt).toMatchObject({
+      file_name: "lunch.png",
+      content_type: "image/png",
+      size: PNG.length,
+    });
+
+    const list = await authed("/api/v1/expenses?search=Receipt%20Shop");
+    const row = ((await list.json()) as any).data.items.find((e: any) => e.id === id);
+    expect(row.has_receipt).toBe(1);
+
+    const get = await authed(`/api/v1/expenses/${id}/receipt`);
+    expect(get.status).toBe(200);
+    expect(get.headers.get("content-type")).toBe("image/png");
+    expect(get.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(get.headers.get("content-disposition")).toContain("inline");
+    expect(get.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox");
+    expect(new Uint8Array(await get.arrayBuffer())).toEqual(PNG);
+
+    const dl = await authed(`/api/v1/expenses/${id}/receipt?download=1`);
+    expect(dl.headers.get("content-disposition")).toContain("attachment");
+
+    // Replace with a PDF; the type comes from the bytes, not the label.
+    const re = await upload(id, PDF, "invoice.pdf", "application/octet-stream", "receipt");
+    expect(re.status).toBe(201);
+    const reData = ((await re.json()) as any).data;
+    expect(reData.receipt.content_type).toBe("application/pdf");
+    expect(reData.receipt_reference).toBe("invoice.pdf");
+
+    const del = await authed(`/api/v1/expenses/${id}/receipt`, { method: "DELETE" });
+    expect(del.status).toBe(200);
+    const delData = ((await del.json()) as any).data;
+    expect(delData.receipt).toBeNull();
+    expect(delData.has_receipt).toBe(0);
+    expect(delData.receipt_reference).toBeNull();
+
+    expect((await authed(`/api/v1/expenses/${id}/receipt`)).status).toBe(404);
+    expect((await authed(`/api/v1/expenses/${id}/receipt`, { method: "DELETE" })).status).toBe(404);
+  });
+
+  test("an expense edit that omits receipt_reference keeps it", async () => {
+    const id = await newExpense();
+    await upload(id, PNG, "kept.png", "image/png");
+    const put = await authed(`/api/v1/expenses/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({ vendor: "Renamed", expense_date: "2026-05-02", amount: 15 }),
+    });
+    const data = ((await put.json()) as any).data;
+    expect(data.vendor).toBe("Renamed");
+    expect(data.receipt_reference).toBe("kept.png");
+  });
+
+  test("deleting a receipt keeps a hand-typed reference", async () => {
+    const id = await newExpense();
+    await upload(id, PNG, "scan.png", "image/png");
+    await authed(`/api/v1/expenses/${id}`, {
+      method: "PUT",
+      body: JSON.stringify({
+        expense_date: "2026-05-01",
+        amount: 12,
+        receipt_reference: "Box 4, folder 2",
+      }),
+    });
+    await authed(`/api/v1/expenses/${id}/receipt`, { method: "DELETE" });
+    const get = await authed(`/api/v1/expenses/${id}`);
+    expect(((await get.json()) as any).data.receipt_reference).toBe("Box 4, folder 2");
+  });
+
+  test("rejects files that are not JPEG, PNG, HEIC or PDF", async () => {
+    const id = await newExpense();
+    const html = new TextEncoder().encode("<html><script>alert(1)</script></html>");
+    const res = await upload(id, html, "evil.png", "image/png");
+    expect(res.status).toBe(400);
+    expect((await authed(`/api/v1/expenses/${id}/receipt`)).status).toBe(404);
+  });
+
+  test("rejects a missing file, an empty file and an oversized file", async () => {
+    const id = await newExpense();
+    const none = await authed(`/api/v1/expenses/${id}/receipt`, {
+      method: "POST",
+      body: new FormData(),
+    });
+    expect(none.status).toBe(400);
+
+    expect((await upload(id, new Uint8Array(0), "empty.png", "image/png")).status).toBe(400);
+
+    const big = new Uint8Array(10 * 1024 * 1024 + 1);
+    big.set(PNG);
+    expect((await upload(id, big, "big.png", "image/png")).status).toBe(413);
+  });
+
+  test("returns 404 for an unknown expense", async () => {
+    const res = await upload("does-not-exist", PNG, "x.png", "image/png");
+    expect(res.status).toBe(404);
+    expect((await authed("/api/v1/expenses/does-not-exist/receipt")).status).toBe(404);
+  });
+
+  test("requires authentication", async () => {
+    const id = await newExpense();
+    const res = await app.request(`/api/v1/expenses/${id}/receipt`);
+    expect(res.status).toBe(401);
+  });
+
+  test("deleting the expense removes its receipt", async () => {
+    const id = await newExpense();
+    await upload(id, PNG, "gone.png", "image/png");
+    const del = await authed(`/api/v1/expenses/${id}`, { method: "DELETE" });
+    expect(del.status).toBe(200);
+    const row = getDb()
+      .query("SELECT COUNT(*) as c FROM expense_receipts WHERE expense_id = ?")
+      .get(id) as { c: number };
+    expect(row.c).toBe(0);
+  });
+
+  test("sniffReceiptType recognises each accepted format", () => {
+    expect(sniffReceiptType(new Uint8Array([0xff, 0xd8, 0xff, 0xe0]))).toBe("image/jpeg");
+    expect(sniffReceiptType(PNG)).toBe("image/png");
+    expect(sniffReceiptType(PDF)).toBe("application/pdf");
+    const heic = new Uint8Array([0, 0, 0, 0x18, ...new TextEncoder().encode("ftypheic")]);
+    expect(sniffReceiptType(heic)).toBe("image/heic");
+    const mp4 = new Uint8Array([0, 0, 0, 0x18, ...new TextEncoder().encode("ftypisom")]);
+    expect(sniffReceiptType(mp4)).toBeNull();
+    expect(sniffReceiptType(new TextEncoder().encode("GIF89a"))).toBeNull();
   });
 });

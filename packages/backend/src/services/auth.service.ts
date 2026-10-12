@@ -3,7 +3,12 @@ import type { User } from "../types/user";
 import { signToken } from "../utils/jwt";
 import { verifyPassword } from "../utils/password";
 
-export async function login(username: string, password: string, tenantId?: string) {
+/**
+ * The shared password check behind every sign-in path (web login and mobile
+ * device sessions). Returns null for an unknown user and a wrong password
+ * alike, so callers can't tell the two apart.
+ */
+export async function verifyCredentials(username: string, password: string): Promise<User | null> {
   const db = getDb();
   const user = db
     .query("SELECT * FROM users WHERE username = ? AND is_active = 1")
@@ -15,6 +20,14 @@ export async function login(username: string, password: string, tenantId?: strin
 
   const valid = await verifyPassword(password, user.password_hash);
   if (!valid) {
+    return null;
+  }
+  return user;
+}
+
+export async function login(username: string, password: string, tenantId?: string) {
+  const user = await verifyCredentials(username, password);
+  if (!user) {
     return null;
   }
 

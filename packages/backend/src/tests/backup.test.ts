@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,8 @@ import { createApp } from "../app";
 import { closeDatabase, getDb, initDatabase } from "../database/connection";
 import { runMigrations } from "../database/migrations";
 import { seed } from "../database/seed";
+import { setDestructiveDbOpsEnabled, setSnapshotSanitizer } from "../routes/export";
+import { updateSettings } from "../services/settings.service";
 import { resetEnvCache } from "../utils/env";
 
 const TEST_DB = "./data/test-backup.db";
@@ -97,6 +99,99 @@ describe("GET /export/sqlite", () => {
   });
 });
 
+describe("GET /export/backup", () => {
+  test("leaves internal settings such as the vote secret out of the JSON", async () => {
+    updateSettings({
+      plugin_vote_secret: "vote-secret-must-stay-on-server",
+      plugin_catalog_cache: '{"plugins":[]}',
+    });
+
+    const res = await app.request("/api/v1/export/backup", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.status).toBe(200);
+    const text = await res.text();
+    expect(text).not.toContain("vote-secret-must-stay-on-server");
+
+    const body = JSON.parse(text) as { data: { settings: Record<string, string> } };
+    expect(body.data.settings.plugin_catalog_cache).toBeUndefined();
+    expect(body.data.settings.company_name).toBeDefined();
+  });
+
+  test("leaves invoice share tokens out (they open and pay the invoice)", async () => {
+    getDb().run(
+      "INSERT INTO invoices (id, invoice_number, customer_id, issue_date, status, total, share_token, is_published) VALUES ('inv-share', 'INV-SHARE-1', 'test-customer-1', '2026-10-01', 'sent', 10, 'json-backup-share-token', 1)",
+    );
+    const res = await app.request("/api/v1/export/backup", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    const text = await res.text();
+    expect(text).toContain("INV-SHARE-1");
+    expect(text).not.toContain("json-backup-share-token");
+  });
+});
+
+describe("GET /export/sqlite with a snapshot sanitizer", () => {
+  afterEach(() => setSnapshotSanitizer(null));
+
+  test("scrubs the copy it sends and leaves the live database alone", async () => {
+    // Long enough to spill onto several overflow pages, which SQLite frees
+    // without zeroing, so a careless scrub would leave the marker in the file.
+    // settings has no search-index triggers that would reuse the freed pages.
+    const secret = `${"a".repeat(20000)}scrub-target-marker${"b".repeat(200)}`;
+    updateSettings({ scrub_probe: secret, scrub_keep: "kept" });
+    const admin = getDb().query("SELECT id FROM users WHERE username = 'admin'").get() as {
+      id: string;
+    };
+    let sanitizedFor: string | null | undefined;
+    setSnapshotSanitizer((snapshot, ctx) => {
+      sanitizedFor = ctx.userId;
+      snapshot.run("DELETE FROM settings WHERE key = 'scrub_probe'");
+    });
+
+    const res = await app.request("/api/v1/export/sqlite", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.status).toBe(200);
+    const buf = new Uint8Array(await res.arrayBuffer());
+
+    // Not even in freed page space: a hex editor must not recover it.
+    expect(Buffer.from(buf).includes("scrub-target-marker")).toBe(false);
+    expect(sanitizedFor).toBe(admin.id);
+
+    const tmpPath = join(tmpdir(), `test-scrubbed-${Date.now()}.db`);
+    await Bun.write(tmpPath, buf);
+    const probe = new Database(tmpPath, { readonly: true });
+    try {
+      const rows = probe
+        .query("SELECT key, value FROM settings WHERE key LIKE 'scrub_%' ORDER BY key")
+        .all();
+      expect(rows).toEqual([{ key: "scrub_keep", value: "kept" }]);
+    } finally {
+      probe.close();
+      unlinkSync(tmpPath);
+    }
+
+    const live = getDb().query("SELECT value FROM settings WHERE key = 'scrub_probe'").get() as {
+      value: string;
+    };
+    expect(live.value).toBe(secret);
+  });
+
+  test("a failing sanitizer fails the download instead of sending an unscrubbed copy", async () => {
+    setSnapshotSanitizer(() => {
+      throw new Error("scrub failed");
+    });
+
+    const res = await app.request("/api/v1/export/sqlite", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.status).toBe(500);
+    const head = new TextDecoder().decode(new Uint8Array(await res.arrayBuffer()).slice(0, 15));
+    expect(head).not.toBe("SQLite format 3");
+  });
+});
+
 describe("POST /export/restore", () => {
   test("rejects non-SQLite files", async () => {
     const formData = new FormData();
@@ -168,5 +263,38 @@ describe("POST /export/wipe", () => {
       body: JSON.stringify({ confirm: "DELETE" }),
     });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("settings report whether restore and wipe are available", () => {
+  afterEach(() => setDestructiveDbOpsEnabled(true));
+
+  async function getSettings(): Promise<Record<string, string>> {
+    const res = await app.request("/api/v1/settings", {
+      headers: { Authorization: `Bearer ${adminToken}` },
+    });
+    expect(res.status).toBe(200);
+    return ((await res.json()) as { data: Record<string, string> }).data;
+  }
+
+  test("a self-hosted install offers them", async () => {
+    expect((await getSettings()).destructive_db_ops).toBe("true");
+  });
+
+  test("a deployment that disables them says so", async () => {
+    setDestructiveDbOpsEnabled(false);
+    expect((await getSettings()).destructive_db_ops).toBe("false");
+  });
+
+  test("saving settings keeps the answer, since the page replaces its state with the response", async () => {
+    setDestructiveDbOpsEnabled(false);
+    const res = await app.request("/api/v1/settings", {
+      method: "PUT",
+      headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(await getSettings()),
+    });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Record<string, string> };
+    expect(body.data.destructive_db_ops).toBe("false");
   });
 });

@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import { logActivity } from "../services/activity.service";
+import { revokeAllDeviceSessions } from "../services/device-session.service";
 import * as userService from "../services/user.service";
 import { getEnv } from "../utils/env";
 
@@ -118,6 +119,24 @@ users.delete("/:id", (c) => {
   if (!result.success) {
     return c.json({ success: false, error: result.error }, 400);
   }
+  return c.json({ success: true });
+});
+
+// Signs a user out of every mobile device. Admin-only via the /users guard.
+users.delete("/:id/device-sessions", (c) => {
+  const id = c.req.param("id");
+  if (!userService.getUser(id)) {
+    return c.json({ success: false, error: "User not found" }, 404);
+  }
+  const revoked = revokeAllDeviceSessions(id, "revoked_by_admin");
+  logActivity({
+    user_id: c.get("userId"),
+    user_name: c.get("user")?.username,
+    action: "revoke_device_sessions",
+    resource_type: "user",
+    resource_id: id,
+    metadata: { revoked },
+  });
   return c.json({ success: true });
 });
 
