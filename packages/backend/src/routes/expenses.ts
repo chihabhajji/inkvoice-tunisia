@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { requirePermission } from "../middleware/auth";
 import { logActivity } from "../services/activity.service";
 import * as expenseService from "../services/expense.service";
 import { buildCsv, type CsvColumn, csvHeaders } from "../utils/csv";
@@ -8,7 +9,7 @@ import { todayIso } from "../utils/date";
 
 const expenses = new Hono();
 
-expenses.get("/", (c) => {
+expenses.get("/", requirePermission("expenses", "read"), (c) => {
   const page = Math.max(1, parseInt(c.req.query("page") || "1", 10) || 1);
   const limit = Math.min(Math.max(1, parseInt(c.req.query("limit") || "20", 10) || 20), 100);
 
@@ -42,7 +43,7 @@ const expenseCsvColumns: CsvColumn<ExpenseExportRow>[] = [
   { header: "Receipt", key: "receipt_reference" },
 ];
 
-expenses.get("/export/csv", (c) => {
+expenses.get("/export/csv", requirePermission("expenses", "export"), (c) => {
   const rows = expenseService.listExpensesForExport({
     category: c.req.query("category"),
     billable: c.req.query("billable"),
@@ -67,7 +68,7 @@ const expenseImportSchema = z.object({
   dry_run: z.boolean().default(false),
 });
 
-expenses.post("/import/preview", async (c) => {
+expenses.post("/import/preview", requirePermission("expenses", "create"), async (c) => {
   const body = await c.req.parseBody();
   const file = body.csv;
   if (!file || !(file instanceof File)) {
@@ -111,7 +112,7 @@ expenses.post("/import/preview", async (c) => {
   });
 });
 
-expenses.post("/import", async (c) => {
+expenses.post("/import", requirePermission("expenses", "create"), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = expenseImportSchema.parse(body);
   const csv = parseCsv(parsed.csv);
@@ -186,7 +187,7 @@ expenses.post("/import", async (c) => {
   });
 });
 
-expenses.get("/:id", (c) => {
+expenses.get("/:id", requirePermission("expenses", "read"), (c) => {
   const expense = expenseService.getExpense(c.req.param("id"));
   if (!expense) {
     return c.json({ success: false, error: "Expense not found" }, 404);
@@ -209,7 +210,7 @@ const expenseSchema = z.object({
   notes: z.string().max(2000).optional().or(z.literal("")),
 });
 
-expenses.post("/", async (c) => {
+expenses.post("/", requirePermission("expenses", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = expenseSchema.parse(body);
   const expense = expenseService.createExpense(parsed);
@@ -224,7 +225,7 @@ expenses.post("/", async (c) => {
   return c.json({ success: true, data: expense }, 201);
 });
 
-expenses.put("/:id", async (c) => {
+expenses.put("/:id", requirePermission("expenses", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = expenseSchema.parse(body);
   const expense = expenseService.updateExpense(c.req.param("id"), parsed);
@@ -242,29 +243,35 @@ expenses.put("/:id", async (c) => {
   return c.json({ success: true, data: expense });
 });
 
-expenses.post("/:id/rebill", (c) => {
-  const result = expenseService.rebillExpense(c.req.param("id"));
-  if (!result.success) {
-    const status = result.error === "Expense not found" ? 404 : 409;
-    return c.json({ success: false, error: result.error }, status);
-  }
-  logActivity({
-    user_id: c.get("userId"),
-    user_name: c.get("user")?.username,
-    action: "rebilled",
-    resource_type: "expense",
-    resource_id: c.req.param("id"),
-    metadata: { invoice_id: result.invoice_id },
-  });
-  return c.json({ success: true, data: { invoice_id: result.invoice_id } });
-});
+// Rebilling writes an invoice, so it needs that permission too.
+expenses.post(
+  "/:id/rebill",
+  requirePermission("expenses", "update"),
+  requirePermission("invoices", "create"),
+  (c) => {
+    const result = expenseService.rebillExpense(c.req.param("id"));
+    if (!result.success) {
+      const status = result.error === "Expense not found" ? 404 : 409;
+      return c.json({ success: false, error: result.error }, status);
+    }
+    logActivity({
+      user_id: c.get("userId"),
+      user_name: c.get("user")?.username,
+      action: "rebilled",
+      resource_type: "expense",
+      resource_id: c.req.param("id"),
+      metadata: { invoice_id: result.invoice_id },
+    });
+    return c.json({ success: true, data: { invoice_id: result.invoice_id } });
+  },
+);
 
 // --- Receipt file (photo or PDF) attached to an expense ---------------------
 
 // Upload or replace. multipart/form-data with the file in a `file` field
 // (`receipt` is accepted too). The type is detected from the bytes, so a phone
 // that labels a HEIC photo application/octet-stream still works.
-expenses.post("/:id/receipt", async (c) => {
+expenses.post("/:id/receipt", requirePermission("expenses", "update"), async (c) => {
   const id = c.req.param("id");
   if (!expenseService.getExpense(id)) {
     return c.json({ success: false, error: "Expense not found" }, 404);
@@ -302,7 +309,7 @@ expenses.post("/:id/receipt", async (c) => {
 
 // Download the stored file. Inline by default (for an <img> or a PDF viewer);
 // `?download=1` asks the browser to save it instead.
-expenses.get("/:id/receipt", (c) => {
+expenses.get("/:id/receipt", requirePermission("expenses", "read"), (c) => {
   const receipt = expenseService.getExpenseReceipt(c.req.param("id"));
   if (!receipt) return c.json({ success: false, error: "Receipt not found" }, 404);
   const disposition = c.req.query("download") ? "attachment" : "inline";
@@ -320,7 +327,7 @@ expenses.get("/:id/receipt", (c) => {
   return c.body(receipt.content);
 });
 
-expenses.delete("/:id/receipt", (c) => {
+expenses.delete("/:id/receipt", requirePermission("expenses", "update"), (c) => {
   const id = c.req.param("id");
   if (!expenseService.getExpense(id)) {
     return c.json({ success: false, error: "Expense not found" }, 404);
@@ -339,7 +346,7 @@ expenses.delete("/:id/receipt", (c) => {
   return c.json({ success: true, data: expenseService.getExpense(id) });
 });
 
-expenses.delete("/:id", (c) => {
+expenses.delete("/:id", requirePermission("expenses", "delete"), (c) => {
   const id = c.req.param("id");
   const expense = expenseService.getExpense(id);
   const result = expenseService.deleteExpense(id);
@@ -363,7 +370,7 @@ const batchSchema = z.object({
   action: z.enum(["delete"]),
 });
 
-expenses.post("/batch", async (c) => {
+expenses.post("/batch", requirePermission("expenses", "delete"), async (c) => {
   const body = await c.req.json();
   const parsed = batchSchema.parse(body);
   const errors: { id: string; reason: string }[] = [];

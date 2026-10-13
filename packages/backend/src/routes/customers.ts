@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { requirePermission } from "../middleware/auth";
 import { logActivity } from "../services/activity.service";
 import * as customerService from "../services/customer.service";
 import { deleteMethod, listMethodsForCustomer } from "../services/customer-payment-method.service";
@@ -23,7 +24,7 @@ function statementRange(from?: string, to?: string): { from: string; to: string 
   return { from: fromDate, to: toDate };
 }
 
-customers.get("/", (c) => {
+customers.get("/", requirePermission("customers", "read"), (c) => {
   const search = c.req.query("search");
   const updated_since = c.req.query("updated_since");
   const tags = c.req.query("tags");
@@ -50,7 +51,7 @@ const customerCsvColumns: CsvColumn<Customer>[] = [
   { header: "Created", key: "created_at" },
 ];
 
-customers.get("/export/csv", (c) => {
+customers.get("/export/csv", requirePermission("customers", "export"), (c) => {
   const rows = customerService.listCustomersForExport({
     search: c.req.query("search"),
     tags: c.req.query("tags"),
@@ -61,7 +62,7 @@ customers.get("/export/csv", (c) => {
   return c.body(buildCsv(rows, customerCsvColumns));
 });
 
-customers.get("/:id", (c) => {
+customers.get("/:id", requirePermission("customers", "read"), (c) => {
   const customer = customerService.getCustomer(c.req.param("id"));
   if (!customer) {
     return c.json({ success: false, error: "Customer not found" }, 404);
@@ -73,7 +74,7 @@ customers.get("/:id", (c) => {
 
 // Print-ready statement HTML for a date range (browser print → PDF), mirroring
 // the invoice `/preview` model. `from`/`to` are optional (default: year-to-date).
-customers.get("/:id/statement", (c) => {
+customers.get("/:id/statement", requirePermission("customers", "read"), (c) => {
   const { from, to } = statementRange(c.req.query("from"), c.req.query("to"));
   const html = renderStatementHtml(c.req.param("id"), from, to);
   if (!html) return c.json({ success: false, error: "Customer not found" }, 404);
@@ -94,7 +95,7 @@ const statementSendSchema = z.object({
 
 // Email the statement to the customer (inline HTML; no attachment, matching the
 // app's link/HTML email model — there is no server-side PDF generation).
-customers.post("/:id/statement/send", async (c) => {
+customers.post("/:id/statement/send", requirePermission("customers", "publish"), async (c) => {
   const id = c.req.param("id");
   const parsed = statementSendSchema.parse(await c.req.json().catch(() => ({})));
   const { from, to } = statementRange(parsed.from, parsed.to);
@@ -166,7 +167,7 @@ const tagListSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(50)).max(30).default([]),
 });
 
-customers.post("/", async (c) => {
+customers.post("/", requirePermission("customers", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = customerSchema.parse(body);
   const customer = customerService.createCustomer(parsed);
@@ -181,7 +182,7 @@ customers.post("/", async (c) => {
   return c.json({ success: true, data: customer }, 201);
 });
 
-customers.put("/:id", async (c) => {
+customers.put("/:id", requirePermission("customers", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = customerSchema.parse(body);
   const customer = customerService.updateCustomer(c.req.param("id"), parsed);
@@ -200,7 +201,7 @@ customers.put("/:id", async (c) => {
 });
 
 // Replace tags on a customer (full replace, no status restrictions).
-customers.put("/:id/tags", async (c) => {
+customers.put("/:id/tags", requirePermission("customers", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = tagListSchema.parse(body);
   const id = c.req.param("id");
@@ -210,7 +211,7 @@ customers.put("/:id/tags", async (c) => {
   return c.json({ success: true, data: { tags: getTagsForItem(id, "customer") } });
 });
 
-customers.delete("/:id", (c) => {
+customers.delete("/:id", requirePermission("customers", "delete"), (c) => {
   const id = c.req.param("id");
   const customer = customerService.getCustomer(id);
   const result = customerService.deleteCustomer(id);
@@ -267,7 +268,7 @@ const importMappingSchema = z.object({
   dry_run: z.boolean().default(false),
 });
 
-customers.post("/import/preview", async (c) => {
+customers.post("/import/preview", requirePermission("customers", "create"), async (c) => {
   const body = await c.req.parseBody();
   const file = body.csv;
   if (!file || !(file instanceof File)) {
@@ -317,7 +318,7 @@ customers.post("/import/preview", async (c) => {
   });
 });
 
-customers.post("/import", async (c) => {
+customers.post("/import", requirePermission("customers", "create"), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = importMappingSchema.parse(body);
   const csv = parseCsv(parsed.csv);
@@ -389,7 +390,7 @@ customers.post("/import", async (c) => {
   });
 });
 
-customers.post("/batch", async (c) => {
+customers.post("/batch", requirePermission("customers", "delete"), async (c) => {
   const body = await c.req.json();
   const parsed = batchSchema.parse(body);
   const errors: { id: string; reason: string }[] = [];
@@ -408,14 +409,10 @@ customers.post("/batch", async (c) => {
 });
 
 // --- Saved payment methods ---
-//
-// No route-level permission guard here, matching every other route in this
-// file: access control is the blanket authMiddleware applied to /api/v1/*
-// in app.ts, not a per-route requirePermission check.
 
 // Display metadata only, the same reduced shape the customer-facing portal
 // returns (routes/public.ts). Gateway identifiers stay server-side.
-customers.get("/:id/payment-methods", (c) => {
+customers.get("/:id/payment-methods", requirePermission("customers", "read"), (c) => {
   const id = c.req.param("id");
   const customer = customerService.getCustomer(id);
   if (!customer) return c.json({ success: false, error: "Customer not found" }, 404);
@@ -433,19 +430,23 @@ customers.get("/:id/payment-methods", (c) => {
   return c.json({ success: true, data });
 });
 
-customers.delete("/:id/payment-methods/:methodId", async (c) => {
-  const result = await deleteMethod(c.req.param("methodId"), c.req.param("id"));
-  if (!result.success) {
-    // "Not found" is the caller's fault, anything else is the gateway's.
-    const status = result.error === "Payment method not found" ? 404 : 502;
-    return c.json({ success: false, error: result.error }, status);
-  }
-  return c.json({ success: true, data: { message: "Payment method removed" } });
-});
+customers.delete(
+  "/:id/payment-methods/:methodId",
+  requirePermission("customers", "update"),
+  async (c) => {
+    const result = await deleteMethod(c.req.param("methodId"), c.req.param("id"));
+    if (!result.success) {
+      // "Not found" is the caller's fault, anything else is the gateway's.
+      const status = result.error === "Payment method not found" ? 404 : 502;
+      return c.json({ success: false, error: result.error }, status);
+    }
+    return c.json({ success: true, data: { message: "Payment method removed" } });
+  },
+);
 
 // --- Client portal access management ---
 
-customers.post("/:id/portal", async (c) => {
+customers.post("/:id/portal", requirePermission("customers", "update"), async (c) => {
   const id = c.req.param("id");
   const customer = customerService.getCustomer(id);
   if (!customer) return c.json({ success: false, error: "Customer not found" }, 404);
@@ -482,7 +483,7 @@ customers.post("/:id/portal", async (c) => {
   return c.json({ success: true, data: { token: result.token, email_status: emailStatus } });
 });
 
-customers.delete("/:id/portal", (c) => {
+customers.delete("/:id/portal", requirePermission("customers", "update"), (c) => {
   const ok = customerService.disableCustomerPortal(c.req.param("id"));
   if (!ok) return c.json({ success: false, error: "Customer not found" }, 404);
   return c.json({ success: true });

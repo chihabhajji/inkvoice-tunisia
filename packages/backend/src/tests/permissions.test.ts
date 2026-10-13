@@ -111,10 +111,9 @@ describe("auth requirement on protected endpoints", () => {
 });
 
 describe("requirePermission middleware (unit)", () => {
-  // The requirePermission helper in middleware/auth.ts isn't currently wired
-  // to routes, but the schema and the helper exist. Verify the helper
-  // returns 403 when the (resource, action) row is missing and proceeds when it
-  // exists.
+  // Verify the helper returns 403 when the (resource, action) row is missing
+  // and proceeds when it exists. Its wiring onto the routes is covered by
+  // route-permissions.test.ts.
   test("missing (resource, action) row → 403", async () => {
     const { requirePermission } = await import("../middleware/auth");
     const handler = requirePermission("invoices", "delete");

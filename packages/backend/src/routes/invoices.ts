@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
 import { getDb } from "../database/connection";
+import { hasPermission, requirePermission } from "../middleware/auth";
 import { logActivity } from "../services/activity.service";
 import {
   deleteEinvoiceRecord,
@@ -25,7 +26,7 @@ import { getProfile, listProfiles } from "../xml/profile-registry";
 
 const invoices = new Hono();
 
-invoices.get("/", (c) => {
+invoices.get("/", requirePermission("invoices", "read"), (c) => {
   const status = c.req.query("status");
   const customer_id = c.req.query("customer_id");
   const from = c.req.query("from");
@@ -52,13 +53,13 @@ invoices.get("/", (c) => {
   return c.json({ success: true, data });
 });
 
-invoices.get("/next-number", (c) => {
+invoices.get("/next-number", requirePermission("invoices", "read"), (c) => {
   const number = invoiceService.getNextNumber();
   return c.json({ success: true, data: { number } });
 });
 
 // Trash routes — must be before /:id to avoid parameter matching
-invoices.get("/trash/list", (c) => {
+invoices.get("/trash/list", requirePermission("invoices", "read"), (c) => {
   const page = Math.max(1, parseInt(c.req.query("page") || "1", 10) || 1);
   const limit = Math.min(Math.max(1, parseInt(c.req.query("limit") || "20", 10) || 20), 100);
   const data = invoiceService.listTrashedInvoices({ page, limit });
@@ -70,7 +71,7 @@ const trashBatchSchema = z.object({
   action: z.enum(["restore", "permanent-delete"]),
 });
 
-invoices.post("/trash/batch", async (c) => {
+invoices.post("/trash/batch", requirePermission("invoices", "delete"), async (c) => {
   const body = await c.req.json();
   const parsed = trashBatchSchema.parse(body);
   const errors: { id: string; reason: string }[] = [];
@@ -97,9 +98,20 @@ const batchSchema = z.object({
   action: z.enum(["delete", "mark-paid", "mark-sent", "void"]),
 });
 
-invoices.post("/batch", async (c) => {
+// The same permission each action needs on its single-invoice route.
+const BATCH_PERMISSION = {
+  delete: "delete",
+  "mark-paid": "update",
+  "mark-sent": "update",
+  void: "void",
+} as const;
+
+invoices.post("/batch", requirePermission("invoices", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = batchSchema.parse(body);
+  if (!hasPermission(c.get("user"), "invoices", BATCH_PERMISSION[parsed.action])) {
+    return c.json({ success: false, error: "Forbidden" }, 403);
+  }
   const errors: { id: string; reason: string }[] = [];
   let succeeded = 0;
 
@@ -159,7 +171,7 @@ const invoiceCsvColumns: CsvColumn<InvoiceRow>[] = [
   { header: "Created", key: "created_at" },
 ];
 
-invoices.get("/export/csv", (c) => {
+invoices.get("/export/csv", requirePermission("invoices", "export"), (c) => {
   const rows = invoiceService.listInvoicesForExport({
     status: c.req.query("status"),
     customer_id: c.req.query("customer_id"),
@@ -175,7 +187,7 @@ invoices.get("/export/csv", (c) => {
 });
 
 // Credit note routes
-invoices.get("/next-cn-number", (c) => {
+invoices.get("/next-cn-number", requirePermission("invoices", "read"), (c) => {
   const number = invoiceService.getNextCreditNoteNumber();
   return c.json({ success: true, data: { number } });
 });
@@ -189,7 +201,7 @@ const consolidateSchema = z.object({
   discount_value: z.number().min(0).optional(),
 });
 
-invoices.post("/consolidate", async (c) => {
+invoices.post("/consolidate", requirePermission("invoices", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = consolidateSchema.parse(body);
   const invoice = invoiceService.createConsolidated(parsed);
@@ -254,7 +266,7 @@ const tagListSchema = z.object({
   tags: z.array(z.string().trim().min(1).max(50)).max(30).default([]),
 });
 
-invoices.post("/", async (c) => {
+invoices.post("/", requirePermission("invoices", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = invoiceSchema.parse(body);
   const invoice = invoiceService.createInvoice(parsed);
@@ -275,7 +287,7 @@ invoices.post("/", async (c) => {
   return c.json({ success: true, data: invoice }, 201);
 });
 
-invoices.get("/:id", (c) => {
+invoices.get("/:id", requirePermission("invoices", "read"), (c) => {
   const invoice = invoiceService.getInvoice(c.req.param("id"));
   if (!invoice) {
     return c.json({ success: false, error: "Invoice not found" }, 404);
@@ -283,7 +295,7 @@ invoices.get("/:id", (c) => {
   return c.json({ success: true, data: invoice });
 });
 
-invoices.put("/:id", async (c) => {
+invoices.put("/:id", requirePermission("invoices", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = invoiceSchema.parse(body);
   const invoice = invoiceService.updateInvoice(c.req.param("id"), parsed);
@@ -295,7 +307,7 @@ invoices.put("/:id", async (c) => {
 
 // Replace the tags on an invoice. Unlike PUT /:id this is allowed on any
 // status (a sent/paid invoice's tags stay editable) and is a full replace.
-invoices.put("/:id/tags", async (c) => {
+invoices.put("/:id/tags", requirePermission("invoices", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = tagListSchema.parse(body);
   const id = c.req.param("id");
@@ -307,7 +319,7 @@ invoices.put("/:id/tags", async (c) => {
   return c.json({ success: true, data: { tags: getTagsForItem(id, "invoice") } });
 });
 
-invoices.delete("/:id", (c) => {
+invoices.delete("/:id", requirePermission("invoices", "delete"), (c) => {
   const result = invoiceService.deleteInvoice(c.req.param("id"));
   if (!result.success) {
     return c.json({ success: false, error: result.error }, 400);
@@ -315,7 +327,7 @@ invoices.delete("/:id", (c) => {
   return c.json({ success: true });
 });
 
-invoices.post("/:id/publish", (c) => {
+invoices.post("/:id/publish", requirePermission("invoices", "publish"), (c) => {
   const invoice = invoiceService.publishInvoice(c.req.param("id"));
   if (!invoice) {
     return c.json({ success: false, error: "Invoice not found or cannot be published" }, 400);
@@ -323,7 +335,7 @@ invoices.post("/:id/publish", (c) => {
   return c.json({ success: true, data: invoice });
 });
 
-invoices.post("/:id/unpublish", (c) => {
+invoices.post("/:id/unpublish", requirePermission("invoices", "publish"), (c) => {
   const invoice = invoiceService.unpublishInvoice(c.req.param("id"));
   if (!invoice) {
     return c.json({ success: false, error: "Invoice not found or not published" }, 400);
@@ -331,7 +343,7 @@ invoices.post("/:id/unpublish", (c) => {
   return c.json({ success: true, data: invoice });
 });
 
-invoices.post("/:id/void", async (c) => {
+invoices.post("/:id/void", requirePermission("invoices", "void"), async (c) => {
   const invoice = invoiceService.voidInvoice(c.req.param("id"));
   if (!invoice) {
     return c.json({ success: false, error: "Invoice not found or cannot be voided" }, 400);
@@ -353,7 +365,7 @@ invoices.post("/:id/void", async (c) => {
   return c.json({ success: true, data: invoice });
 });
 
-invoices.post("/:id/mark-paid", async (c) => {
+invoices.post("/:id/mark-paid", requirePermission("invoices", "update"), async (c) => {
   const invoice = invoiceService.markPaid(c.req.param("id"));
   if (!invoice) {
     return c.json({ success: false, error: "Invoice not found or cannot be marked paid" }, 404);
@@ -376,7 +388,7 @@ invoices.post("/:id/mark-paid", async (c) => {
   return c.json({ success: true, data: invoice });
 });
 
-invoices.post("/:id/mark-complete", (c) => {
+invoices.post("/:id/mark-complete", requirePermission("invoices", "update"), (c) => {
   const invoice = invoiceService.markComplete(c.req.param("id"));
   if (!invoice) {
     return c.json({ success: false, error: "Invoice not found or cannot be marked complete" }, 404);
@@ -392,7 +404,7 @@ invoices.post("/:id/mark-complete", (c) => {
   return c.json({ success: true, data: invoice });
 });
 
-invoices.post("/:id/mark-sent", async (c) => {
+invoices.post("/:id/mark-sent", requirePermission("invoices", "update"), async (c) => {
   const invoice = invoiceService.markSent(c.req.param("id"));
   if (!invoice) {
     return c.json({ success: false, error: "Invoice not found or cannot be marked sent" }, 404);
@@ -413,7 +425,7 @@ invoices.post("/:id/mark-sent", async (c) => {
   return c.json({ success: true, data: invoice });
 });
 
-invoices.post("/:id/duplicate", (c) => {
+invoices.post("/:id/duplicate", requirePermission("invoices", "create"), (c) => {
   const invoice = invoiceService.duplicateInvoice(c.req.param("id"));
   if (!invoice) {
     return c.json({ success: false, error: "Invoice not found" }, 404);
@@ -421,7 +433,7 @@ invoices.post("/:id/duplicate", (c) => {
   return c.json({ success: true, data: invoice }, 201);
 });
 
-invoices.post("/:id/duplicate-as-quote", (c) => {
+invoices.post("/:id/duplicate-as-quote", requirePermission("invoices", "create"), (c) => {
   const result = quoteService.createQuoteFromInvoice(c.req.param("id"));
   if (!result.success) {
     return c.json({ success: false, error: result.error }, 400);
@@ -429,7 +441,7 @@ invoices.post("/:id/duplicate-as-quote", (c) => {
   return c.json({ success: true, data: result.data }, 201);
 });
 
-invoices.post("/:id/credit-note", (c) => {
+invoices.post("/:id/credit-note", requirePermission("invoices", "create"), (c) => {
   const result = invoiceService.createCreditNote(c.req.param("id"));
   if (!result.success) {
     return c.json({ success: false, error: result.error }, 400);
@@ -437,13 +449,13 @@ invoices.post("/:id/credit-note", (c) => {
   return c.json({ success: true, data: result.data }, 201);
 });
 
-invoices.get("/:id/credit-notes", (c) => {
+invoices.get("/:id/credit-notes", requirePermission("invoices", "read"), (c) => {
   const creditNotes = invoiceService.listCreditNotes(c.req.param("id"));
   return c.json({ success: true, data: creditNotes });
 });
 
 // Send invoice via email
-invoices.post("/:id/send", async (c) => {
+invoices.post("/:id/send", requirePermission("invoices", "publish"), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const result = await sendInvoiceEmail(c.req.param("id"), {
     to: typeof body.to === "string" ? body.to : undefined,
@@ -471,7 +483,7 @@ const paymentSchema = z.object({
   apply_cash_discount: z.boolean().optional(),
 });
 
-invoices.post("/:id/payments", async (c) => {
+invoices.post("/:id/payments", requirePermission("invoices", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = paymentSchema.parse(body);
   const result = paymentService.recordPayment(c.req.param("id"), parsed);
@@ -481,12 +493,12 @@ invoices.post("/:id/payments", async (c) => {
   return c.json({ success: true, data: result.data }, 201);
 });
 
-invoices.get("/:id/payments", (c) => {
+invoices.get("/:id/payments", requirePermission("invoices", "read"), (c) => {
   const payments = paymentService.listPayments(c.req.param("id"));
   return c.json({ success: true, data: payments });
 });
 
-invoices.delete("/:id/payments/:paymentId", (c) => {
+invoices.delete("/:id/payments/:paymentId", requirePermission("invoices", "update"), (c) => {
   const result = paymentService.deletePayment(c.req.param("paymentId"));
   if (!result.success) {
     return c.json({ success: false, error: result.error }, 404);
@@ -494,12 +506,12 @@ invoices.delete("/:id/payments/:paymentId", (c) => {
   return c.json({ success: true });
 });
 
-invoices.get("/:id/reminders", (c) => {
+invoices.get("/:id/reminders", requirePermission("invoices", "read"), (c) => {
   const log = getReminderLog(c.req.param("id"));
   return c.json({ success: true, data: log });
 });
 
-invoices.post("/:id/restore", (c) => {
+invoices.post("/:id/restore", requirePermission("invoices", "delete"), (c) => {
   const result = invoiceService.restoreInvoice(c.req.param("id"));
   if (!result.success) {
     return c.json({ success: false, error: result.error }, 400);
@@ -507,7 +519,7 @@ invoices.post("/:id/restore", (c) => {
   return c.json({ success: true });
 });
 
-invoices.delete("/:id/permanent", (c) => {
+invoices.delete("/:id/permanent", requirePermission("invoices", "delete"), (c) => {
   const result = invoiceService.permanentlyDeleteInvoice(c.req.param("id"));
   if (!result.success) {
     return c.json({ success: false, error: result.error }, 400);
@@ -515,7 +527,7 @@ invoices.delete("/:id/permanent", (c) => {
   return c.json({ success: true });
 });
 
-invoices.get("/:id/preview", async (c) => {
+invoices.get("/:id/preview", requirePermission("invoices", "read"), async (c) => {
   const { renderInvoiceHtml } = await import("../services/pdf.service");
   const id = c.req.param("id");
   const html = renderInvoiceHtml(id);
@@ -530,11 +542,11 @@ invoices.get("/:id/preview", async (c) => {
 });
 
 // XML export endpoints
-invoices.get("/xml-profiles", (c) => {
+invoices.get("/xml-profiles", requirePermission("invoices", "read"), (c) => {
   return c.json({ success: true, data: listProfiles() });
 });
 
-invoices.get("/:id/xml/:profileId", (c) => {
+invoices.get("/:id/xml/:profileId", requirePermission("invoices", "read"), (c) => {
   const { id, profileId } = c.req.param();
   const profile = getProfile(profileId);
   if (!profile) return c.json({ success: false, error: "XML profile not found" }, 400);
@@ -554,7 +566,7 @@ invoices.get("/:id/xml/:profileId", (c) => {
 });
 
 // Comment thread (staff side). Customer-side endpoints live under public.ts.
-invoices.get("/:id/comments", (c) => {
+invoices.get("/:id/comments", requirePermission("invoices", "read"), (c) => {
   const db = getDb();
   const id = c.req.param("id");
   const exists = db.query("SELECT id FROM invoices WHERE id = ? AND deleted_at IS NULL").get(id);
@@ -570,7 +582,7 @@ invoices.get("/:id/comments", (c) => {
 // E-invoice emission (XRechnung / ZUGFeRD). Emit stores the generated XML
 // (and the ZUGFeRD hybrid PDF) in einvoice_documents for later download,
 // email delivery and archival.
-invoices.post("/:id/einvoice/emit", async (c) => {
+invoices.post("/:id/einvoice/emit", requirePermission("invoices", "publish"), async (c) => {
   const id = c.req.param("id");
   const exists = getDb()
     .query("SELECT id FROM invoices WHERE id = ? AND deleted_at IS NULL")
@@ -591,7 +603,7 @@ invoices.post("/:id/einvoice/emit", async (c) => {
   }
 });
 
-invoices.get("/:id/einvoices", (c) => {
+invoices.get("/:id/einvoices", requirePermission("invoices", "read"), (c) => {
   const id = c.req.param("id");
   const exists = getDb()
     .query("SELECT id FROM invoices WHERE id = ? AND deleted_at IS NULL")
@@ -600,7 +612,7 @@ invoices.get("/:id/einvoices", (c) => {
   return c.json({ success: true, data: listEinvoiceRecords(id) });
 });
 
-invoices.get("/:id/einvoices/:recordId/xml", (c) => {
+invoices.get("/:id/einvoices/:recordId/xml", requirePermission("invoices", "read"), (c) => {
   const { recordId } = c.req.param();
   const xml = getEinvoiceXml(recordId);
   if (!xml) return c.json({ success: false, error: "E-invoice not found" }, 404);
@@ -609,7 +621,7 @@ invoices.get("/:id/einvoices/:recordId/xml", (c) => {
   return c.body(xml);
 });
 
-invoices.get("/:id/einvoices/:recordId/pdf", (c) => {
+invoices.get("/:id/einvoices/:recordId/pdf", requirePermission("invoices", "read"), (c) => {
   const { recordId } = c.req.param();
   const pdf = getEinvoicePdf(recordId);
   if (!pdf) return c.json({ success: false, error: "E-invoice PDF not found" }, 404);
@@ -618,7 +630,7 @@ invoices.get("/:id/einvoices/:recordId/pdf", (c) => {
   return c.body(new Uint8Array(pdf));
 });
 
-invoices.delete("/:id/einvoices/:recordId", (c) => {
+invoices.delete("/:id/einvoices/:recordId", requirePermission("invoices", "delete"), (c) => {
   const { recordId } = c.req.param();
   if (!deleteEinvoiceRecord(recordId)) {
     return c.json({ success: false, error: "E-invoice not found" }, 404);
@@ -626,7 +638,7 @@ invoices.delete("/:id/einvoices/:recordId", (c) => {
   return c.json({ success: true });
 });
 
-invoices.post("/:id/comments", async (c) => {
+invoices.post("/:id/comments", requirePermission("invoices", "update"), async (c) => {
   const db = getDb();
   const id = c.req.param("id");
   const exists = db.query("SELECT id FROM invoices WHERE id = ? AND deleted_at IS NULL").get(id);

@@ -1,6 +1,7 @@
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { z } from "zod";
+import { requirePermission } from "../middleware/auth";
 import { logActivity } from "../services/activity.service";
 import { isEmailConfigured, sendEmail } from "../services/email.service";
 import * as quoteService from "../services/quote.service";
@@ -29,7 +30,7 @@ function logQuoteActivity(
   });
 }
 
-quotes.get("/", (c) => {
+quotes.get("/", requirePermission("invoices", "read"), (c) => {
   const status = c.req.query("status");
   const customer_id = c.req.query("customer_id");
   const from = c.req.query("from");
@@ -52,7 +53,7 @@ quotes.get("/", (c) => {
   return c.json({ success: true, data });
 });
 
-quotes.get("/next-number", (c) => {
+quotes.get("/next-number", requirePermission("invoices", "read"), (c) => {
   const number = quoteService.getNextNumber();
   return c.json({ success: true, data: { number } });
 });
@@ -83,7 +84,7 @@ const quoteSchema = z.object({
   items: z.array(itemSchema).min(1),
 });
 
-quotes.post("/", async (c) => {
+quotes.post("/", requirePermission("invoices", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = quoteSchema.parse(body);
   const quote = quoteService.createQuote(parsed);
@@ -91,7 +92,7 @@ quotes.post("/", async (c) => {
   return c.json({ success: true, data: quote }, 201);
 });
 
-quotes.get("/:id", (c) => {
+quotes.get("/:id", requirePermission("invoices", "read"), (c) => {
   const quote = quoteService.getQuote(c.req.param("id"));
   if (!quote) {
     return c.json({ success: false, error: "Quote not found" }, 404);
@@ -99,7 +100,7 @@ quotes.get("/:id", (c) => {
   return c.json({ success: true, data: quote });
 });
 
-quotes.put("/:id", async (c) => {
+quotes.put("/:id", requirePermission("invoices", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = quoteSchema.parse(body);
   const quote = quoteService.updateQuote(c.req.param("id"), parsed);
@@ -110,7 +111,7 @@ quotes.put("/:id", async (c) => {
   return c.json({ success: true, data: quote });
 });
 
-quotes.delete("/:id", (c) => {
+quotes.delete("/:id", requirePermission("invoices", "delete"), (c) => {
   const id = c.req.param("id");
   const quote = quoteService.getQuote(id);
   const result = quoteService.deleteQuote(id);
@@ -121,7 +122,7 @@ quotes.delete("/:id", (c) => {
   return c.json({ success: true });
 });
 
-quotes.post("/:id/publish", (c) => {
+quotes.post("/:id/publish", requirePermission("invoices", "publish"), (c) => {
   const quote = quoteService.publishQuote(c.req.param("id"));
   if (!quote) {
     return c.json({ success: false, error: "Quote not found or cannot be published" }, 400);
@@ -130,7 +131,7 @@ quotes.post("/:id/publish", (c) => {
   return c.json({ success: true, data: quote });
 });
 
-quotes.post("/:id/send", async (c) => {
+quotes.post("/:id/send", requirePermission("invoices", "publish"), async (c) => {
   const quote = quoteService.getQuote(c.req.param("id"));
   if (!quote) return c.json({ success: false, error: "Quote not found" }, 404);
 
@@ -188,7 +189,7 @@ ${body.message ? `<p>${body.message}</p>` : ""}`,
   return c.json({ success: true, data: updated });
 });
 
-quotes.post("/:id/accept", (c) => {
+quotes.post("/:id/accept", requirePermission("invoices", "update"), (c) => {
   const quote = quoteService.acceptQuote(c.req.param("id"));
   if (!quote) {
     return c.json({ success: false, error: "Quote not found or cannot be accepted" }, 400);
@@ -197,7 +198,7 @@ quotes.post("/:id/accept", (c) => {
   return c.json({ success: true, data: quote });
 });
 
-quotes.post("/:id/reject", (c) => {
+quotes.post("/:id/reject", requirePermission("invoices", "update"), (c) => {
   const quote = quoteService.rejectQuote(c.req.param("id"));
   if (!quote) {
     return c.json({ success: false, error: "Quote not found or cannot be rejected" }, 400);
@@ -206,7 +207,7 @@ quotes.post("/:id/reject", (c) => {
   return c.json({ success: true, data: quote });
 });
 
-quotes.post("/:id/duplicate", (c) => {
+quotes.post("/:id/duplicate", requirePermission("invoices", "create"), (c) => {
   const quote = quoteService.duplicateQuote(c.req.param("id"));
   if (!quote) {
     return c.json({ success: false, error: "Quote not found" }, 404);
@@ -214,7 +215,7 @@ quotes.post("/:id/duplicate", (c) => {
   return c.json({ success: true, data: quote }, 201);
 });
 
-quotes.get("/:id/preview", async (c) => {
+quotes.get("/:id/preview", requirePermission("invoices", "read"), async (c) => {
   const { renderQuoteHtml } = await import("../services/pdf.service");
   const id = c.req.param("id");
   const html = renderQuoteHtml(id);
@@ -228,7 +229,7 @@ quotes.get("/:id/preview", async (c) => {
   return c.html(html);
 });
 
-quotes.post("/:id/convert", (c) => {
+quotes.post("/:id/convert", requirePermission("invoices", "create"), (c) => {
   const id = c.req.param("id");
   const result = quoteService.convertToInvoice(id);
   if (!result.success) {
@@ -246,12 +247,12 @@ const instalmentSchema = z.object({
   label: z.string().max(255).optional(),
 });
 
-quotes.get("/:id/instalments", (c) => {
+quotes.get("/:id/instalments", requirePermission("invoices", "read"), (c) => {
   const rows = quoteService.listQuoteInstalments(c.req.param("id"));
   return c.json({ success: true, data: rows });
 });
 
-quotes.post("/:id/convert-invoices", async (c) => {
+quotes.post("/:id/convert-invoices", requirePermission("invoices", "create"), async (c) => {
   const id = c.req.param("id");
   const body = await c.req.json();
   const parsed = z.array(instalmentSchema).min(1).parse(body);

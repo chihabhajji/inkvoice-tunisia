@@ -1,17 +1,18 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { requirePermission } from "../middleware/auth";
 import * as templateService from "../services/template.service";
 import { buildEpcPayload } from "../utils/epc-qr";
 import { qrToDataUri } from "../utils/qr-code";
 
 const templates = new Hono();
 
-templates.get("/", (c) => {
+templates.get("/", requirePermission("templates", "read"), (c) => {
   const data = templateService.listTemplates();
   return c.json({ success: true, data });
 });
 
-templates.get("/:id", (c) => {
+templates.get("/:id", requirePermission("templates", "read"), (c) => {
   const template = templateService.getTemplate(c.req.param("id"));
   if (!template) {
     return c.json({ success: false, error: "Template not found" }, 404);
@@ -27,14 +28,14 @@ const templateSchema = z.object({
   is_default: z.number().min(0).max(1).optional(),
 });
 
-templates.post("/", async (c) => {
+templates.post("/", requirePermission("templates", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = templateSchema.parse(body);
   const template = templateService.createTemplate(parsed);
   return c.json({ success: true, data: template }, 201);
 });
 
-templates.put("/:id", async (c) => {
+templates.put("/:id", requirePermission("templates", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = templateSchema.parse(body);
   const template = templateService.updateTemplate(c.req.param("id"), parsed);
@@ -44,7 +45,7 @@ templates.put("/:id", async (c) => {
   return c.json({ success: true, data: template });
 });
 
-templates.delete("/:id", (c) => {
+templates.delete("/:id", requirePermission("templates", "delete"), (c) => {
   const result = templateService.deleteTemplate(c.req.param("id"));
   if (!result.success) {
     return c.json({ success: false, error: result.error }, 400);
@@ -52,7 +53,7 @@ templates.delete("/:id", (c) => {
   return c.json({ success: true });
 });
 
-templates.put("/:id/default", (c) => {
+templates.put("/:id/default", requirePermission("templates", "update"), (c) => {
   const template = templateService.setDefault(c.req.param("id"));
   if (!template) {
     return c.json({ success: false, error: "Template not found" }, 404);
@@ -61,7 +62,7 @@ templates.put("/:id/default", (c) => {
 });
 
 // Return the bundled HTML/CSS for a builtin template (used by "Reset to default")
-templates.get("/:id/bundled", (c) => {
+templates.get("/:id/bundled", requirePermission("templates", "read"), (c) => {
   const bundled = templateService.getBundledTemplate(c.req.param("id"));
   if (!bundled) {
     return c.json(
@@ -73,7 +74,7 @@ templates.get("/:id/bundled", (c) => {
 });
 
 // Install template from remote manifest URL
-templates.post("/install-url", async (c) => {
+templates.post("/install-url", requirePermission("templates", "create"), async (c) => {
   const body = await c.req.json();
   const { url, expected_hash } = z
     .object({
@@ -90,7 +91,7 @@ templates.post("/install-url", async (c) => {
 });
 
 // Upload template (multipart-style JSON)
-templates.post("/install-upload", async (c) => {
+templates.post("/install-upload", requirePermission("templates", "create"), async (c) => {
   const body = await c.req.json();
   const { name, description, html_content, css_content } = z
     .object({
@@ -114,7 +115,7 @@ templates.post("/install-upload", async (c) => {
 });
 
 // Update remote template from its manifest URL
-templates.post("/:id/update-remote", async (c) => {
+templates.post("/:id/update-remote", requirePermission("templates", "update"), async (c) => {
   try {
     const result = await templateService.updateFromManifest(c.req.param("id"));
     return c.json({ success: true, data: result });
@@ -123,7 +124,7 @@ templates.post("/:id/update-remote", async (c) => {
   }
 });
 
-templates.post("/preview", async (c) => {
+templates.post("/preview", requirePermission("templates", "read"), async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const htmlContent = body.html_content || "";
   const cssContent = body.css_content || "";
@@ -137,7 +138,7 @@ templates.post("/preview", async (c) => {
   return c.html(fullHtml);
 });
 
-templates.post("/:id/preview", async (c) => {
+templates.post("/:id/preview", requirePermission("templates", "read"), async (c) => {
   const template = templateService.getTemplate(c.req.param("id"));
   if (!template) {
     return c.json({ success: false, error: "Template not found" }, 404);
