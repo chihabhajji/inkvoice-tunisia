@@ -23,6 +23,7 @@ export type Resource =
   | "invoices"
   | "customers"
   | "products"
+  | "expenses"
   | "templates"
   | "settings"
   | "tax_definitions"

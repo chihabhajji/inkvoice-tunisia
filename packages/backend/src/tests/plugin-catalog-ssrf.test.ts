@@ -100,7 +100,7 @@ describe("validateUrl", () => {
     await expect(
       validateUrl("https://nope.invalid/", { allowUnresolvable: false }),
     ).rejects.toThrow(/could not be resolved/);
-    // The webhook and template callers keep the permissive default.
+    // The default stays permissive; everything that fetches passes false.
     await expect(validateUrl("https://nope.invalid/")).resolves.toBeUndefined();
   });
 });

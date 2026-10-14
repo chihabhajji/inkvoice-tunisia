@@ -12,10 +12,15 @@ import {
   retryDelivery,
 } from "../services/outgoing-webhooks.service";
 import { resetEnvCache } from "../utils/env";
+import { setAddressResolver } from "../utils/ssrf-protection";
 
 const TEST_DB = "./data/test-outgoing-webhooks.db";
 let app: Hono;
 let adminToken: string;
+
+/** Every host is public unless listed, so no test depends on live DNS. */
+const resolveFixtureHosts = async (hostname: string) =>
+  ({ "internal.test": ["10.0.0.5"], "nowhere.test": [] })[hostname] ?? ["93.184.216.34"];
 
 async function login(username: string, password: string): Promise<string> {
   const res = await app.request("/api/v1/auth/login", {
@@ -35,6 +40,7 @@ beforeAll(async () => {
   // Allow private IPs (127.0.0.1) for the local test fetch mocks below
   process.env.ALLOW_PRIVATE_URLS = "true";
   resetEnvCache();
+  setAddressResolver(resolveFixtureHosts);
   for (const suffix of ["", "-wal", "-shm"]) {
     try {
       unlinkSync(TEST_DB + suffix);
@@ -48,6 +54,7 @@ beforeAll(async () => {
 });
 
 afterAll(() => {
+  setAddressResolver(null);
   closeDatabase();
   for (const suffix of ["", "-wal", "-shm"]) {
     try {
@@ -228,5 +235,107 @@ describe("dispatchEvent", () => {
     } finally {
       global.fetch = realFetch;
     }
+  });
+});
+
+// The receiver's status and body are stored and shown back to whoever set the
+// hook up, so a delivery that reached an internal address would read it out.
+describe("delivery stays on public addresses", () => {
+  let calls: string[] = [];
+
+  /** One event to one fresh hook, with every earlier hook switched off. The
+   *  fake follows redirects unless told not to, as the real fetch does. */
+  async function deliverOnce(url: string, respond: (url: string) => Response) {
+    calls = [];
+    const realFetch = global.fetch;
+    const fakeFetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
+      const target = String(input);
+      calls.push(target);
+      const res = respond(target);
+      const location = res.headers.get("location");
+      if (location && init?.redirect !== "manual") {
+        return fakeFetch(new URL(location, target).toString(), init);
+      }
+      return res;
+    };
+    global.fetch = mock(fakeFetch) as unknown as typeof fetch;
+    try {
+      getDb().run("UPDATE outgoing_webhooks SET is_active = 0");
+      const wh = createWebhook({ name: "Probe", url, events: ["invoice.overdue"] });
+      await dispatchEvent("invoice.overdue", { invoice_number: "SSRF-1" });
+      return listDeliveries(wh.id)[0];
+    } finally {
+      global.fetch = realFetch;
+    }
+  }
+
+  test("a 302 toward the metadata service is logged, not followed", async () => {
+    const delivery = await deliverOnce("https://redirect.test/hook", (url) =>
+      url.startsWith("https://redirect.test/")
+        ? new Response(null, {
+            status: 302,
+            headers: { location: "http://169.254.169.254/latest/meta-data/iam/" },
+          })
+        : new Response("AccessKeyId=AKIA-METADATA"),
+    );
+    expect(calls).toEqual(["https://redirect.test/hook"]);
+    expect(delivery.status_code).toBe(302);
+    expect(delivery.response_body).toBe("");
+  });
+
+  test("a host that resolves inward is never contacted", async () => {
+    const delivery = await deliverOnce("https://internal.test/hook", () => new Response("secret"));
+    expect(calls).toEqual([]);
+    expect(delivery.status_code).toBeNull();
+    expect(delivery.response_body).toBeNull();
+    expect(delivery.error_message).toBe("address not allowed (public https URLs only)");
+  });
+
+  test("a host this server cannot resolve fails closed, with the same message", async () => {
+    const delivery = await deliverOnce("https://nowhere.test/hook", () => new Response("secret"));
+    expect(calls).toEqual([]);
+    expect(delivery.error_message).toBe("address not allowed (public https URLs only)");
+  });
+
+  test("keeps at most 4000 bytes of the answer", async () => {
+    const delivery = await deliverOnce(
+      "https://chatty.test/hook",
+      () => new Response("x".repeat(100_000)),
+    );
+    expect(delivery.status_code).toBe(200);
+    expect(delivery.response_body?.length).toBe(4000);
+  });
+
+  test("refuses an internal address when the hook is saved", async () => {
+    const save = (method: string, path: string, url: string) =>
+      app.request(path, {
+        method,
+        headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ name: "Probe", url, events: ["invoice.paid"] }),
+      });
+
+    for (const url of [
+      "https://internal.test/hook",
+      "https://nowhere.test/hook",
+      "https://169.254.169.254/latest/meta-data/",
+      "http://example.com/hook",
+    ]) {
+      const res = await save("POST", "/api/v1/outgoing-webhooks", url);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({
+        success: false,
+        error: "Webhook URL must be a public https:// address",
+      });
+    }
+
+    const created = await save("POST", "/api/v1/outgoing-webhooks", "https://example.com/hook");
+    expect(created.status).toBe(201);
+    const { data } = (await created.json()) as { data: { id: string } };
+    const moved = await save(
+      "PUT",
+      `/api/v1/outgoing-webhooks/${data.id}`,
+      "https://internal.test/",
+    );
+    expect(moved.status).toBe(400);
   });
 });

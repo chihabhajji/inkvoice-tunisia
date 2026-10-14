@@ -22,11 +22,9 @@ export function setAddressResolver(fn: AddressResolver | null): void {
 
 export interface ValidateUrlOptions {
   /**
-   * When DNS cannot resolve the host, allow the fetch anyway. True preserves
-   * the original behaviour for user-entered webhook and template URLs, where a
-   * host this server cannot resolve is usually a transient DNS problem rather
-   * than an attack. Pass false for URLs an untrusted party can set and this
-   * server then fetches, where an unresolvable host must fail closed.
+   * When DNS cannot resolve the host, allow it anyway. Pass false for any URL
+   * this server goes on to fetch (safeFetch does): a name this resolver cannot
+   * see, such as an /etc/hosts entry, may still connect somewhere internal.
    */
   allowUnresolvable?: boolean;
 }

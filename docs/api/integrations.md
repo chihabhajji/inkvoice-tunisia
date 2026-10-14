@@ -44,7 +44,9 @@ resource).
 
 A scoped token that hits a resource it wasn't granted — or a non-integration
 area such as `settings` or `users` — receives `403 Forbidden`. A **full-access**
-token (created with no scopes) is not restricted.
+token (created with no scopes) has no scope limits. Every token, scoped or
+not, can still only do what its owner's role allows: a Viewer's token is
+read-only.
 
 ## 4. Polling for changes (`updated_since`)
 

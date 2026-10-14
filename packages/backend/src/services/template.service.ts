@@ -3,10 +3,39 @@ import Mustache from "mustache";
 import { getDb } from "../database/connection";
 import type { Template } from "../types/settings";
 import { sanitizeHtml } from "../utils/html-sanitizer";
-import { validateUrl } from "../utils/ssrf-protection";
+import { logger } from "../utils/logger";
+import {
+  publicFetchError,
+  SafeFetchError,
+  type SafeFetchOptions,
+  safeFetchJson,
+  safeFetchText,
+} from "../utils/safe-fetch";
 import { getBuiltinTemplateByName, readTemplateFile } from "./builtin-templates";
 
 const MAX_TEMPLATE_SIZE = 128 * 1024; // 128KB
+
+// The manifest URL comes from whoever installs the template and the file URLs
+// from the manifest, so every remote read goes through safe-fetch: each hop
+// SSRF-checked, the body capped (generously, as MAX_TEMPLATE_SIZE counts
+// characters and a UTF-8 character can take 4 bytes), a timeout set.
+const REMOTE_FETCH: SafeFetchOptions = { timeoutMs: 10_000, maxBytes: 1024 * 1024 };
+
+/** Rethrows a remote read failure carrying only the coarse reason (see
+ *  safe-fetch.ts); the detail goes to the log. */
+function remoteFailure(file: string) {
+  return (err: unknown): never => {
+    logger.warn({ err, file }, "Remote template fetch failed");
+    throw new Error(`Failed to fetch ${file}: ${publicFetchError(err)}`);
+  };
+}
+
+/** A stylesheet that answers non-2xx is skipped rather than failing the install. */
+function skipMissingStylesheet(err: unknown): null {
+  if (err instanceof SafeFetchError && err.code === "http_error") return null;
+  return remoteFailure("stylesheet")(err);
+}
+
 export function listTemplates(): Template[] {
   const db = getDb();
   return db.query("SELECT * FROM templates ORDER BY type, name").all() as Template[];
@@ -122,11 +151,7 @@ export function getBundledTemplate(
 }
 
 export async function installFromUrl(url: string, expectedHash?: string): Promise<Template> {
-  await validateUrl(url);
-
-  const manifestRes = await fetch(url);
-  if (!manifestRes.ok) throw new Error(`Failed to fetch manifest: ${manifestRes.status}`);
-  const manifest = (await manifestRes.json()) as {
+  const manifest = (await safeFetchJson(url, REMOTE_FETCH).catch(remoteFailure("manifest"))) as {
     name?: string;
     description?: string;
     html_url?: string;
@@ -138,10 +163,9 @@ export async function installFromUrl(url: string, expectedHash?: string): Promis
     throw new Error("Invalid manifest: name and html_url are required");
   }
 
-  await validateUrl(manifest.html_url);
-  const htmlRes = await fetch(manifest.html_url);
-  if (!htmlRes.ok) throw new Error(`Failed to fetch template HTML: ${htmlRes.status}`);
-  let htmlContent = await htmlRes.text();
+  let htmlContent = await safeFetchText(manifest.html_url, REMOTE_FETCH).catch(
+    remoteFailure("template HTML"),
+  );
 
   if (htmlContent.length > MAX_TEMPLATE_SIZE) {
     throw new Error(`Template exceeds maximum size of ${MAX_TEMPLATE_SIZE / 1024}KB`);
@@ -157,9 +181,7 @@ export async function installFromUrl(url: string, expectedHash?: string): Promis
 
   let cssContent: string | null = null;
   if (manifest.css_url) {
-    await validateUrl(manifest.css_url);
-    const cssRes = await fetch(manifest.css_url);
-    if (cssRes.ok) cssContent = await cssRes.text();
+    cssContent = await safeFetchText(manifest.css_url, REMOTE_FETCH).catch(skipMissingStylesheet);
   }
 
   const db = getDb();
@@ -216,20 +238,18 @@ export async function updateFromManifest(
   const manifestUrl = template.manifest_url;
   if (!manifestUrl) throw new Error("No manifest URL stored for this template");
 
-  await validateUrl(manifestUrl);
-  const manifestRes = await fetch(manifestUrl);
-  if (!manifestRes.ok) throw new Error(`Failed to fetch manifest: ${manifestRes.status}`);
-  const manifest = (await manifestRes.json()) as {
+  const manifest = (await safeFetchJson(manifestUrl, REMOTE_FETCH).catch(
+    remoteFailure("manifest"),
+  )) as {
     html_url?: string;
     css_url?: string;
     sha256?: string;
   };
 
   if (!manifest.html_url) throw new Error("Invalid manifest");
-  await validateUrl(manifest.html_url);
-  const htmlRes = await fetch(manifest.html_url);
-  if (!htmlRes.ok) throw new Error(`Failed to fetch template: ${htmlRes.status}`);
-  let htmlContent = await htmlRes.text();
+  let htmlContent = await safeFetchText(manifest.html_url, REMOTE_FETCH).catch(
+    remoteFailure("template"),
+  );
 
   const newHash = new Bun.CryptoHasher("sha256").update(htmlContent).digest("hex");
   if (newHash === template.sha256_hash) {
@@ -240,9 +260,7 @@ export async function updateFromManifest(
 
   let cssContent: string | null = null;
   if (manifest.css_url) {
-    await validateUrl(manifest.css_url);
-    const cssRes = await fetch(manifest.css_url);
-    if (cssRes.ok) cssContent = await cssRes.text();
+    cssContent = await safeFetchText(manifest.css_url, REMOTE_FETCH).catch(skipMissingStylesheet);
   }
 
   db.run(

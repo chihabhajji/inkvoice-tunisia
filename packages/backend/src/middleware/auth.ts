@@ -1,4 +1,4 @@
-import type { Context, Next } from "hono";
+import type { Context, MiddlewareHandler, Next } from "hono";
 import { getCookie } from "hono/cookie";
 import { getDb } from "../database/connection";
 import { findActiveTokenByHash, hashToken, touchLastUsed } from "../services/api-token.service";
@@ -164,37 +164,34 @@ async function authenticateDeviceSession(c: Context, next: Next, token: string) 
   await next();
 }
 
-export function requirePermission(resource: Resource, action: Action) {
-  return async (c: Context, next: Next) => {
-    const user = c.get("user");
+/** Whether `user` may perform `action` on `resource`. For checks that depend
+ *  on the request body; a route otherwise uses requirePermission. */
+export function hasPermission(user: JWTPayload, resource: Resource, action: Action): boolean {
+  // Admin / Owner short-circuit.
+  if (user.is_admin) return true;
 
-    // Admin / Owner short-circuit.
-    if (user.is_admin) {
-      await next();
-      return;
-    }
+  const db = getDb();
 
-    const db = getDb();
+  // Prefer role-based check (post-T2.11). Falls back to legacy
+  // user_permissions row check for tenants/users that haven't migrated yet.
+  const userRow = db.query("SELECT role FROM users WHERE id = ?").get(user.sub) as {
+    role: string | null;
+  } | null;
 
-    // Prefer role-based check (post-T2.11). Falls back to legacy
-    // user_permissions row check for tenants/users that haven't migrated yet.
-    const userRow = db.query("SELECT role FROM users WHERE id = ?").get(user.sub) as {
-      role: string | null;
-    } | null;
+  if (userRow?.role && roleAllows(userRow.role, resource, action)) return true;
 
-    if (userRow?.role && roleAllows(userRow.role, resource, action)) {
-      await next();
-      return;
-    }
+  const perm = db
+    .query("SELECT id FROM user_permissions WHERE user_id = ? AND resource = ? AND action = ?")
+    .get(user.sub, resource, action);
+  return !!perm;
+}
 
-    const perm = db
-      .query("SELECT id FROM user_permissions WHERE user_id = ? AND resource = ? AND action = ?")
-      .get(user.sub, resource, action);
-
-    if (!perm) {
+// Typed as MiddlewareHandler so a route's own handler keeps its typed params.
+export function requirePermission(resource: Resource, action: Action): MiddlewareHandler {
+  return async (c, next) => {
+    if (!hasPermission(c.get("user"), resource, action)) {
       return c.json({ success: false, error: "Forbidden" }, 403);
     }
-
     await next();
   };
 }

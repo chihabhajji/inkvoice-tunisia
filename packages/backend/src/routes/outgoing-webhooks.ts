@@ -1,8 +1,24 @@
 import { Hono } from "hono";
 import { z } from "zod";
 import * as webhookService from "../services/outgoing-webhooks.service";
+import { validateUrl } from "../utils/ssrf-protection";
 
 const outgoingWebhooks = new Hono();
+
+/** Refuses an address that could never be delivered to as it is entered.
+ *  Delivery checks again on every send, so this is the early answer, not the
+ *  guard. Unresolvable hosts fail too and every failure gets one message, so
+ *  the answer reveals nothing about what this server's DNS can see. */
+async function isDeliverableUrl(url: string): Promise<boolean> {
+  try {
+    await validateUrl(url, { allowUnresolvable: false });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const URL_NOT_ALLOWED = { success: false, error: "Webhook URL must be a public https:// address" };
 
 const SUPPORTED_EVENTS = [
   "invoice.paid",
@@ -32,6 +48,7 @@ outgoingWebhooks.get("/", (c) => {
 outgoingWebhooks.post("/", async (c) => {
   const body = await c.req.json();
   const parsed = webhookSchema.parse(body);
+  if (!(await isDeliverableUrl(parsed.url))) return c.json(URL_NOT_ALLOWED, 400);
   const created = webhookService.createWebhook(parsed);
   return c.json({ success: true, data: created }, 201);
 });
@@ -39,6 +56,9 @@ outgoingWebhooks.post("/", async (c) => {
 outgoingWebhooks.put("/:id", async (c) => {
   const body = await c.req.json();
   const parsed = webhookSchema.partial().parse(body);
+  if (parsed.url !== undefined && !(await isDeliverableUrl(parsed.url))) {
+    return c.json(URL_NOT_ALLOWED, 400);
+  }
   const updated = webhookService.updateWebhook(c.req.param("id"), parsed);
   if (!updated) return c.json({ success: false, error: "Webhook not found" }, 404);
   return c.json({ success: true, data: updated });

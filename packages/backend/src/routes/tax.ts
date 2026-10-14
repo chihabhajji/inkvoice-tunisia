@@ -1,10 +1,11 @@
 import { Hono } from "hono";
 import { z } from "zod";
+import { requirePermission } from "../middleware/auth";
 import * as taxService from "../services/tax.service";
 
 const tax = new Hono();
 
-tax.get("/", (c) => {
+tax.get("/", requirePermission("tax_definitions", "read"), (c) => {
   const data = taxService.listTaxDefinitions();
   return c.json({ success: true, data });
 });
@@ -19,14 +20,14 @@ const taxSchema = z.object({
   is_active: z.number().min(0).max(1).optional(),
 });
 
-tax.post("/", async (c) => {
+tax.post("/", requirePermission("tax_definitions", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = taxSchema.parse(body);
   const def = taxService.createTaxDefinition(parsed);
   return c.json({ success: true, data: def }, 201);
 });
 
-tax.put("/:id", async (c) => {
+tax.put("/:id", requirePermission("tax_definitions", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = taxSchema.parse(body);
   const def = taxService.updateTaxDefinition(c.req.param("id"), parsed);
@@ -36,7 +37,7 @@ tax.put("/:id", async (c) => {
   return c.json({ success: true, data: def });
 });
 
-tax.delete("/:id", (c) => {
+tax.delete("/:id", requirePermission("tax_definitions", "delete"), (c) => {
   const result = taxService.deleteTaxDefinition(c.req.param("id"));
   if (!result.success) {
     return c.json({ success: false, error: result.error }, 409);

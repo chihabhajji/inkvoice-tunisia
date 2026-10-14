@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
 import { getDb } from "../database/connection";
+import { requirePermission } from "../middleware/auth";
 import { logActivity } from "../services/activity.service";
 import * as productService from "../services/product.service";
 import { buildCsv, type CsvColumn, csvHeaders } from "../utils/csv";
@@ -10,7 +11,7 @@ import { todayIso } from "../utils/date";
 
 const products = new Hono();
 
-products.get("/", (c) => {
+products.get("/", requirePermission("products", "read"), (c) => {
   const category = c.req.query("category");
   const active = c.req.query("active");
   const search = c.req.query("search");
@@ -37,7 +38,7 @@ const productCsvColumns: CsvColumn<ProductExportRow>[] = [
   { header: "Created", key: "created_at" },
 ];
 
-products.get("/export/csv", (c) => {
+products.get("/export/csv", requirePermission("products", "export"), (c) => {
   const rows = productService.listProductsForExport({
     category: c.req.query("category"),
     active: c.req.query("active"),
@@ -59,7 +60,7 @@ const productImportSchema = z.object({
   dry_run: z.boolean().default(false),
 });
 
-products.post("/import/preview", async (c) => {
+products.post("/import/preview", requirePermission("products", "create"), async (c) => {
   const body = await c.req.parseBody();
   const file = body.csv;
   if (!file || !(file instanceof File)) {
@@ -101,7 +102,7 @@ products.post("/import/preview", async (c) => {
   });
 });
 
-products.post("/import", async (c) => {
+products.post("/import", requirePermission("products", "create"), async (c) => {
   const body = await c.req.json().catch(() => null);
   const parsed = productImportSchema.parse(body);
   const csv = parseCsv(parsed.csv);
@@ -177,7 +178,7 @@ products.post("/import", async (c) => {
 });
 
 // --- Product Categories ---
-products.get("/categories", (c) => {
+products.get("/categories", requirePermission("products", "read"), (c) => {
   const db = getDb();
   const rows = db
     .query("SELECT * FROM product_categories ORDER BY is_builtin DESC, name ASC")
@@ -185,7 +186,7 @@ products.get("/categories", (c) => {
   return c.json({ success: true, data: rows });
 });
 
-products.post("/categories", async (c) => {
+products.post("/categories", requirePermission("products", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = z.object({ name: z.string().min(1).max(100) }).parse(body);
   const db = getDb();
@@ -198,7 +199,7 @@ products.post("/categories", async (c) => {
   return c.json({ success: true, data: created }, 201);
 });
 
-products.put("/categories/:id", async (c) => {
+products.put("/categories/:id", requirePermission("products", "update"), async (c) => {
   const db = getDb();
   const id = c.req.param("id");
   const row = db.query("SELECT * FROM product_categories WHERE id = ?").get(id) as {
@@ -226,7 +227,7 @@ products.put("/categories/:id", async (c) => {
   return c.json({ success: true, data: updated });
 });
 
-products.delete("/categories/:id", (c) => {
+products.delete("/categories/:id", requirePermission("products", "delete"), (c) => {
   const db = getDb();
   const id = c.req.param("id");
   const row = db.query("SELECT * FROM product_categories WHERE id = ?").get(id) as {
@@ -246,13 +247,13 @@ products.delete("/categories/:id", (c) => {
 });
 
 // --- Product Units ---
-products.get("/units", (c) => {
+products.get("/units", requirePermission("products", "read"), (c) => {
   const db = getDb();
   const rows = db.query("SELECT * FROM product_units ORDER BY is_builtin DESC, name ASC").all();
   return c.json({ success: true, data: rows });
 });
 
-products.post("/units", async (c) => {
+products.post("/units", requirePermission("products", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = z
     .object({ name: z.string().min(1).max(100), symbol: z.string().max(10).optional() })
@@ -268,7 +269,7 @@ products.post("/units", async (c) => {
   return c.json({ success: true, data: created }, 201);
 });
 
-products.put("/units/:id", async (c) => {
+products.put("/units/:id", requirePermission("products", "update"), async (c) => {
   const db = getDb();
   const id = c.req.param("id");
   const row = db.query("SELECT * FROM product_units WHERE id = ?").get(id) as {
@@ -305,7 +306,7 @@ products.put("/units/:id", async (c) => {
   return c.json({ success: true, data: updated });
 });
 
-products.delete("/units/:id", (c) => {
+products.delete("/units/:id", requirePermission("products", "delete"), (c) => {
   const db = getDb();
   const id = c.req.param("id");
   const row = db.query("SELECT * FROM product_units WHERE id = ?").get(id) as {
@@ -322,7 +323,7 @@ products.delete("/units/:id", (c) => {
   return c.json({ success: true });
 });
 
-products.get("/:id", (c) => {
+products.get("/:id", requirePermission("products", "read"), (c) => {
   const product = productService.getProduct(c.req.param("id"));
   if (!product) {
     return c.json({ success: false, error: "Product not found" }, 404);
@@ -341,7 +342,7 @@ const productSchema = z.object({
   is_active: z.number().min(0).max(1).optional(),
 });
 
-products.post("/", async (c) => {
+products.post("/", requirePermission("products", "create"), async (c) => {
   const body = await c.req.json();
   const parsed = productSchema.parse(body);
   const product = productService.createProduct(parsed);
@@ -356,7 +357,7 @@ products.post("/", async (c) => {
   return c.json({ success: true, data: product }, 201);
 });
 
-products.put("/:id", async (c) => {
+products.put("/:id", requirePermission("products", "update"), async (c) => {
   const body = await c.req.json();
   const parsed = productSchema.parse(body);
   const product = productService.updateProduct(c.req.param("id"), parsed);
@@ -374,7 +375,7 @@ products.put("/:id", async (c) => {
   return c.json({ success: true, data: product });
 });
 
-products.post("/:id/reactivate", (c) => {
+products.post("/:id/reactivate", requirePermission("products", "update"), (c) => {
   const result = productService.reactivateProduct(c.req.param("id"));
   if (!result.success) {
     const status = result.error === "Product not found" ? 404 : 409;
@@ -383,7 +384,7 @@ products.post("/:id/reactivate", (c) => {
   return c.json({ success: true });
 });
 
-products.get("/:id/usage", (c) => {
+products.get("/:id/usage", requirePermission("products", "read"), (c) => {
   const usage = productService.getProductUsage(c.req.param("id"));
   if (!usage) {
     return c.json({ success: false, error: "Product not found" }, 404);
@@ -391,7 +392,7 @@ products.get("/:id/usage", (c) => {
   return c.json({ success: true, data: usage });
 });
 
-products.delete("/:id", (c) => {
+products.delete("/:id", requirePermission("products", "delete"), (c) => {
   const id = c.req.param("id");
   const product = productService.getProduct(id);
   const result = productService.deleteProduct(id);
@@ -414,7 +415,7 @@ const batchSchema = z.object({
   action: z.enum(["delete"]),
 });
 
-products.post("/batch", async (c) => {
+products.post("/batch", requirePermission("products", "delete"), async (c) => {
   const body = await c.req.json();
   const parsed = batchSchema.parse(body);
   const errors: { id: string; reason: string }[] = [];

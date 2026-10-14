@@ -1,8 +1,12 @@
 import crypto from "node:crypto";
 import { getDb } from "../database/connection";
-import { validateUrl } from "../utils/ssrf-protection";
+import { logger } from "../utils/logger";
+import { publicFetchError, readBody, safeFetch } from "../utils/safe-fetch";
 
 export type WebhookPreset = "generic" | "slack";
+
+/** How much of the receiver's answer is kept on the delivery row. */
+const RESPONSE_BODY_LIMIT = 4000;
 
 export interface OutgoingWebhook {
   id: string;
@@ -153,34 +157,20 @@ async function deliver(
 ): Promise<{ status_code: number | null; response_body: string | null; error: string | null }> {
   const payload = formatPayload(webhook.preset as WebhookPreset, event_type, data);
   try {
-    await validateUrl(webhook.url);
-  } catch (err) {
-    return {
-      status_code: null,
-      response_body: null,
-      error: err instanceof Error ? err.message : "URL validation failed",
-    };
-  }
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 10_000);
-  try {
-    const res = await fetch(webhook.url, {
+    // The receiver's answer is stored and shown back, so the address is
+    // checked again on every send and a redirect is never followed: a URL
+    // that answers 302 toward an internal address gets its 302 logged instead.
+    const res = await safeFetch(webhook.url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: payload,
-      signal: controller.signal,
+      timeoutMs: 10_000,
     });
-    const body = await res.text();
-    return { status_code: res.status, response_body: body.slice(0, 4000), error: null };
+    const body = await readBody(res, RESPONSE_BODY_LIMIT, { truncate: true });
+    return { status_code: res.status, response_body: body, error: null };
   } catch (err) {
-    return {
-      status_code: null,
-      response_body: null,
-      error: err instanceof Error ? err.message : "Delivery failed",
-    };
-  } finally {
-    clearTimeout(timer);
+    logger.warn({ err, webhook_id: webhook.id }, "Outgoing webhook delivery failed");
+    return { status_code: null, response_body: null, error: publicFetchError(err) };
   }
 }
 

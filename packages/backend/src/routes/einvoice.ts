@@ -36,7 +36,7 @@ import { getFranceTransport, listTransports } from "../services/einvoice-transpo
 
 const einvoices = new Hono();
 
-einvoices.get("/inbox", (c) => {
+einvoices.get("/inbox", requirePermission("invoices", "read"), (c) => {
   const status = c.req.query("status") as InboxStatus | undefined;
   if (status && !["inbox", "processed", "archived"].includes(status)) {
     return c.json({ success: false, error: "Invalid status filter" }, 400);
@@ -44,7 +44,7 @@ einvoices.get("/inbox", (c) => {
   return c.json({ success: true, data: listInboxItems(status) });
 });
 
-einvoices.post("/inbox/import", async (c) => {
+einvoices.post("/inbox/import", requirePermission("invoices", "create"), async (c) => {
   const body = await c.req.parseBody();
   const file = body.file;
   if (!file || typeof file === "string") {
@@ -73,13 +73,13 @@ einvoices.post("/inbox/import", async (c) => {
   return c.json({ success: true, data: { id, duplicate } }, duplicate ? 200 : 201);
 });
 
-einvoices.get("/inbox/:id", (c) => {
+einvoices.get("/inbox/:id", requirePermission("invoices", "read"), (c) => {
   const item = getInboxItem(c.req.param("id"));
   if (!item) return c.json({ success: false, error: "Inbox item not found" }, 404);
   return c.json({ success: true, data: item });
 });
 
-einvoices.get("/inbox/:id/raw", (c) => {
+einvoices.get("/inbox/:id/raw", requirePermission("invoices", "read"), (c) => {
   const raw = getInboxRaw(c.req.param("id"));
   if (!raw) return c.json({ success: false, error: "Inbox item not found" }, 404);
   c.header("Content-Type", "application/xml; charset=utf-8");
@@ -91,7 +91,7 @@ const linkSchema = z.object({
   customer_id: z.string().min(1).nullable(),
 });
 
-einvoices.post("/inbox/:id/link", async (c) => {
+einvoices.post("/inbox/:id/link", requirePermission("invoices", "update"), async (c) => {
   const body = linkSchema.safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ success: false, error: "customer_id required" }, 400);
   const item = getInboxItem(c.req.param("id"));
@@ -112,7 +112,7 @@ einvoices.post("/inbox/:id/link", async (c) => {
   return c.json({ success: true });
 });
 
-einvoices.post("/inbox/:id/status", async (c) => {
+einvoices.post("/inbox/:id/status", requirePermission("invoices", "update"), async (c) => {
   const body = z
     .object({ status: z.enum(["inbox", "processed", "archived"]) })
     .safeParse(await c.req.json().catch(() => null));
@@ -123,7 +123,7 @@ einvoices.post("/inbox/:id/status", async (c) => {
   return c.json({ success: true });
 });
 
-einvoices.delete("/inbox/:id", (c) => {
+einvoices.delete("/inbox/:id", requirePermission("invoices", "delete"), (c) => {
   if (!deleteInboxItem(c.req.param("id"))) {
     return c.json({ success: false, error: "Inbox item not found" }, 404);
   }
