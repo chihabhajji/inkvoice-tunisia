@@ -1,6 +1,5 @@
 // Per-tenant plugin state, driven by the merged catalog endpoint
-// GET /api/v1/plugins/catalog (spec: docs/superpowers/specs/2026-08-31-plugin-
-// catalog-app-design.md, 2.2). Holds the full merged entry list plus catalog
+// GET /api/v1/plugins/catalog. Holds the full merged entry list plus catalog
 // provenance. Drives the nav-visibility gate, PluginGuard, and the admin
 // Plugins settings tab; those three consume enabled/loaded/ensureFetched with
 // semantics identical to the pre-catalog store. Enablement writes still go
