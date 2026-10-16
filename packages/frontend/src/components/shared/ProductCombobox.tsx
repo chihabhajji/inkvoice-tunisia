@@ -25,7 +25,8 @@ interface ProductComboboxProps {
   onChange: (id: string) => void;
   /** Called when the user chooses to create a new product or service; receives
    *  the current search text so the product-create page can pre-fill the name. */
-  onAddNew: (search: string) => void;
+  /** Omit when the user may not create a product: the add entries are hidden. */
+  onAddNew?: (search: string) => void;
 }
 
 export function ProductCombobox({ products, value, onChange, onAddNew }: ProductComboboxProps) {
@@ -36,7 +37,7 @@ export function ProductCombobox({ products, value, onChange, onAddNew }: Product
 
   const handleAddNew = () => {
     setOpen(false);
-    onAddNew(search.trim());
+    onAddNew?.(search.trim());
   };
 
   return (
@@ -66,16 +67,22 @@ export function ProductCombobox({ products, value, onChange, onAddNew }: Product
           />
           <CommandList>
             <CommandEmpty>
-              <button
-                type="button"
-                onClick={handleAddNew}
-                className="flex w-full items-center justify-center gap-1.5 px-2 py-1.5 text-sm text-primary hover:underline"
-              >
-                <Plus className="h-4 w-4" />
-                {search.trim()
-                  ? t("invoices.add_product_named", { name: search.trim() })
-                  : t("invoices.add_new_product")}
-              </button>
+              {onAddNew ? (
+                <button
+                  type="button"
+                  onClick={handleAddNew}
+                  className="flex w-full items-center justify-center gap-1.5 px-2 py-1.5 text-sm text-primary hover:underline"
+                >
+                  <Plus className="h-4 w-4" />
+                  {search.trim()
+                    ? t("invoices.add_product_named", { name: search.trim() })
+                    : t("invoices.add_new_product")}
+                </button>
+              ) : (
+                <span className="block px-2 py-1.5 text-sm text-muted-foreground">
+                  {t("command.no_results")}
+                </span>
+              )}
             </CommandEmpty>
             <CommandGroup>
               {products.map((p) => (
@@ -99,16 +106,18 @@ export function ProductCombobox({ products, value, onChange, onAddNew }: Product
               ))}
             </CommandGroup>
           </CommandList>
-          <div className="border-t p-1">
-            <button
-              type="button"
-              onClick={handleAddNew}
-              className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-primary hover:bg-muted"
-            >
-              <Plus className="h-4 w-4" />
-              {t("invoices.add_new_product")}
-            </button>
-          </div>
+          {onAddNew && (
+            <div className="border-t p-1">
+              <button
+                type="button"
+                onClick={handleAddNew}
+                className="flex w-full items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-primary hover:bg-muted"
+              >
+                <Plus className="h-4 w-4" />
+                {t("invoices.add_new_product")}
+              </button>
+            </div>
+          )}
         </Command>
       </PopoverContent>
     </Popover>

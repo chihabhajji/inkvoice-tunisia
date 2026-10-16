@@ -22,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCan } from "@/hooks/use-can";
 import { useNewEntityShortcut } from "@/hooks/use-new-entity-shortcut";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
@@ -51,6 +52,10 @@ export default function Expenses() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams<{ id?: string }>();
+  const can = useCan();
+  const canCreate = can("expenses", "create");
+  const canEdit = can("expenses", "update");
+  const canDelete = can("expenses", "delete");
   const isNew = location.pathname === "/expenses/new";
   const isForm = isNew || (!!id && isRecordId(id));
 
@@ -78,7 +83,7 @@ export default function Expenses() {
     }
   }, [isForm]);
 
-  useNewEntityShortcut(() => navigate("/expenses/new"), !isForm);
+  useNewEntityShortcut(() => navigate("/expenses/new"), canCreate && !isForm);
 
   const expenseColumns = [
     { key: "expense_date", label: t("expenses.date"), required: true },
@@ -89,7 +94,10 @@ export default function Expenses() {
     { key: "billable", label: t("expenses.billable") },
   ];
   const { isVisible: isColVisible } = useColumnVisibility("inkvoice-cols-expenses");
-  const visibleColCount = 1 + expenseColumns.filter((c) => isColVisible(c.key)).length + 1;
+  const visibleColCount =
+    (canDelete ? 1 : 0) + // checkbox (batch delete is the only batch action)
+    expenseColumns.filter((c) => isColVisible(c.key)).length +
+    (canEdit || canDelete ? 1 : 0); // actions
 
   if (isForm) {
     return (
@@ -160,26 +168,33 @@ export default function Expenses() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{t("expenses.title")}</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="h-4 w-4 mr-2" /> {t("import.import_button")}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              const params: Record<string, string> = {};
-              if (search) params.search = search;
-              if (billable !== "all") params.billable = billable === "billable" ? "true" : "false";
-              window.open(api.exportCsvUrl("expenses", params), "_blank");
-            }}
-          >
-            <Download className="h-4 w-4 mr-2" /> {t("common.export_csv")}
-          </Button>
-          <Button
-            onClick={() => navigate("/expenses/new")}
-            title={`${t("expenses.add_expense")} (N)`}
-          >
-            <Plus className="h-4 w-4 mr-2" /> {t("expenses.add_expense")}
-          </Button>
+          {canCreate && (
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="h-4 w-4 mr-2" /> {t("import.import_button")}
+            </Button>
+          )}
+          {can("expenses", "export") && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const params: Record<string, string> = {};
+                if (search) params.search = search;
+                if (billable !== "all")
+                  params.billable = billable === "billable" ? "true" : "false";
+                window.open(api.exportCsvUrl("expenses", params), "_blank");
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" /> {t("common.export_csv")}
+            </Button>
+          )}
+          {canCreate && (
+            <Button
+              onClick={() => navigate("/expenses/new")}
+              title={`${t("expenses.add_expense")} (N)`}
+            >
+              <Plus className="h-4 w-4 mr-2" /> {t("expenses.add_expense")}
+            </Button>
+          )}
           <ColumnVisibilityMenu storageKey="inkvoice-cols-expenses" columns={expenseColumns} />
         </div>
       </div>
@@ -223,13 +238,15 @@ export default function Expenses() {
         <Table stickyFirstColumn>
           <TableHeader>
             <TableRow>
-              <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
-                <Checkbox
-                  checked={allSelected}
-                  indeterminate={someSelected && !allSelected}
-                  onCheckedChange={toggleAll}
-                />
-              </TableCell>
+              {canDelete && (
+                <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={allSelected}
+                    indeterminate={someSelected && !allSelected}
+                    onCheckedChange={toggleAll}
+                  />
+                </TableCell>
+              )}
               {isColVisible("expense_date") && (
                 <SortableColumnHeader
                   label={t("expenses.date")}
@@ -279,9 +296,11 @@ export default function Expenses() {
                   onSort={handleSort}
                 />
               )}
-              <TableCell className="w-[100px] font-medium text-sm text-muted-foreground">
-                {t("common.actions")}
-              </TableCell>
+              {(canEdit || canDelete) && (
+                <TableCell className="w-[100px] font-medium text-sm text-muted-foreground">
+                  {t("common.actions")}
+                </TableCell>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -293,7 +312,7 @@ export default function Expenses() {
                     title={t("expenses.empty_title")}
                     description={t("expenses.empty_description")}
                     actionLabel={t("expenses.add_expense")}
-                    onAction={() => navigate("/expenses/new")}
+                    onAction={canCreate ? () => navigate("/expenses/new") : undefined}
                   />
                 </TableCell>
               </TableRow>
@@ -307,12 +326,14 @@ export default function Expenses() {
                 )}
                 onClick={() => navigate(`/expenses/${e.id}`)}
               >
-                <TableCell className="w-10" onClick={(ev) => ev.stopPropagation()}>
-                  <Checkbox
-                    checked={selected.has(e.id)}
-                    onCheckedChange={() => toggleSelect(e.id)}
-                  />
-                </TableCell>
+                {canDelete && (
+                  <TableCell className="w-10" onClick={(ev) => ev.stopPropagation()}>
+                    <Checkbox
+                      checked={selected.has(e.id)}
+                      onCheckedChange={() => toggleSelect(e.id)}
+                    />
+                  </TableCell>
+                )}
                 {isColVisible("expense_date") && (
                   <TableCell className="text-muted-foreground tabular-nums">
                     {formatDate(e.expense_date)}
@@ -356,26 +377,32 @@ export default function Expenses() {
                     )}
                   </TableCell>
                 )}
-                <TableCell onClick={(ev) => ev.stopPropagation()}>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("common.edit")}
-                      onClick={() => navigate(`/expenses/${e.id}`)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("common.delete")}
-                      onClick={() => setDeleteConfirm({ open: true, id: e.id })}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
+                {(canEdit || canDelete) && (
+                  <TableCell onClick={(ev) => ev.stopPropagation()}>
+                    <div className="flex gap-1">
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("common.edit")}
+                          onClick={() => navigate(`/expenses/${e.id}`)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("common.delete")}
+                          onClick={() => setDeleteConfirm({ open: true, id: e.id })}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

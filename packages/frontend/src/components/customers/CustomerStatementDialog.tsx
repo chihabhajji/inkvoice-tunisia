@@ -6,6 +6,7 @@ import { FormField } from "@/components/shared/FormField";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 
@@ -26,6 +27,8 @@ export function CustomerStatementDialog({
   customerEmail: string | null;
 }) {
   const { t } = useTranslation();
+  // Emailing the statement sends customer data out, like sending an invoice.
+  const canEmail = useCan()("customers", "publish");
   const init = defaultRange();
   const [from, setFrom] = useState(init.from);
   const [to, setTo] = useState(init.to);
@@ -110,18 +113,21 @@ export function CustomerStatementDialog({
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-xs text-muted-foreground">
-            {customerEmail
-              ? t("statements.email_to", { email: customerEmail })
-              : t("statements.no_email")}
+            {canEmail &&
+              (customerEmail
+                ? t("statements.email_to", { email: customerEmail })
+                : t("statements.no_email"))}
           </span>
           <div className="flex gap-2">
             <Button variant="outline" onClick={handlePrint}>
               <Printer className="h-4 w-4 mr-1.5" /> {t("statements.print")}
             </Button>
-            <Button onClick={handleEmail} disabled={sending || !customerEmail}>
-              <Mail className="h-4 w-4 mr-1.5" />
-              {sending ? t("common.loading") : t("statements.email")}
-            </Button>
+            {canEmail && (
+              <Button onClick={handleEmail} disabled={sending || !customerEmail}>
+                <Mail className="h-4 w-4 mr-1.5" />
+                {sending ? t("common.loading") : t("statements.email")}
+              </Button>
+            )}
           </div>
         </div>
       </DialogContent>

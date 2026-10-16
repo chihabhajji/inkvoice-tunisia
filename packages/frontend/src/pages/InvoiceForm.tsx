@@ -35,6 +35,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { isInvoiceFormEditable } from "@/lib/constants";
 import { addDaysIso, todayIso } from "@/lib/date";
@@ -87,7 +88,7 @@ function SortableLineItem({
   onProductSelect: (index: number, productId: string) => void;
   onUpdateItem: (index: number, field: string, value: any) => void;
   onRemoveItem: (index: number) => void;
-  onAddNewProduct: (index: number, search: string) => void;
+  onAddNewProduct?: (index: number, search: string) => void;
   t: (key: string) => string;
 }) {
   const {
@@ -131,7 +132,7 @@ function SortableLineItem({
             products={products}
             value={item.product_id}
             onChange={(productId) => onProductSelect(index, productId)}
-            onAddNew={(search) => onAddNewProduct(index, search)}
+            onAddNew={onAddNewProduct && ((search) => onAddNewProduct(index, search))}
           />
         </div>
         <div>
@@ -237,6 +238,9 @@ export default function InvoiceForm({ onSave }: Props) {
   const navigate = useNavigate();
   const location = useLocation();
   const { t } = useTranslation();
+  const can = useCan();
+  const canAddCustomer = can("customers", "create");
+  const canAddProduct = can("products", "create");
   const [loading, setLoading] = useState(false);
   const [customers, setCustomers] = useState<any[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
@@ -814,7 +818,7 @@ export default function InvoiceForm({ onSave }: Props) {
                     customers={customers}
                     value={form.customer_id}
                     onChange={handleCustomerChange}
-                    onAddNew={handleAddCustomer}
+                    onAddNew={canAddCustomer ? handleAddCustomer : undefined}
                     error={!!errors.customer_id}
                   />
                 </div>
@@ -829,16 +833,18 @@ export default function InvoiceForm({ onSave }: Props) {
                 >
                   <RefreshCw className={cn("h-4 w-4", customersLoading && "animate-spin")} />
                 </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="icon"
-                  aria-label={t("invoices.add_customer")}
-                  title={t("invoices.add_customer")}
-                  onClick={() => handleAddCustomer()}
-                >
-                  <Plus className="h-4 w-4" />
-                </Button>
+                {canAddCustomer && (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="icon"
+                    aria-label={t("invoices.add_customer")}
+                    title={t("invoices.add_customer")}
+                    onClick={() => handleAddCustomer()}
+                  >
+                    <Plus className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </FormField>
             <FormField label={t("invoices.invoice_number")}>
@@ -990,7 +996,7 @@ export default function InvoiceForm({ onSave }: Props) {
                         onProductSelect={handleProductSelect}
                         onUpdateItem={updateItem}
                         onRemoveItem={removeItem}
-                        onAddNewProduct={handleAddProduct}
+                        onAddNewProduct={canAddProduct ? handleAddProduct : undefined}
                         t={t}
                       />
                     ))}

@@ -34,6 +34,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCan } from "@/hooks/use-can";
 import { useNewEntityShortcut } from "@/hooks/use-new-entity-shortcut";
 import { useTranslation } from "@/i18n";
 import { STATUS_COLORS } from "@/lib/constants";
@@ -82,6 +83,8 @@ export default function Invoices() {
   const { id } = useParams<{ id?: string }>();
   const location = useLocation();
   const [searchParams] = useSearchParams();
+  const can = useCan();
+  const canCreate = can("invoices", "create");
 
   const isNew = location.pathname === "/invoices/new";
   const isEdit = location.pathname.endsWith("/edit");
@@ -147,7 +150,10 @@ export default function Invoices() {
     }
   }, [id, isNew, isEdit, isView, navigate]);
 
-  useNewEntityShortcut(() => navigate("/invoices/new"), !isNew && !isEdit && !isView && !isTrash);
+  useNewEntityShortcut(
+    () => navigate("/invoices/new"),
+    canCreate && !isNew && !isEdit && !isView && !isTrash,
+  );
 
   const invoiceColumns = [
     { key: "invoice_number", label: t("invoices.invoice_number"), required: true },
@@ -158,7 +164,12 @@ export default function Invoices() {
     { key: "status", label: t("invoices.status") },
   ];
   const { isVisible: isColVisible } = useColumnVisibility("inkvoice-cols-invoices");
-  const visibleColCount = 1 + invoiceColumns.filter((c) => isColVisible(c.key)).length; // +1 for checkbox col
+  // Rows are only selectable when the user may run at least one batch action.
+  const canBatch = isTrash
+    ? can("invoices", "delete")
+    : can("invoices", "update") || can("invoices", "void") || can("invoices", "delete");
+  const visibleColCount =
+    (canBatch ? 1 : 0) + invoiceColumns.filter((c) => isColVisible(c.key)).length;
 
   if (isNew || isEdit) {
     return (
@@ -286,27 +297,31 @@ export default function Invoices() {
                 setPage(1);
               }}
             />
-            <Button
-              variant="outline"
-              onClick={() => {
-                const params: Record<string, string> = {};
-                if (search) params.search = search;
-                if (statusFilter !== "all") params.status = statusFilter;
-                if (customerIdFilter) params.customer_id = customerIdFilter;
-                if (dateRange.from) params.from = dateRange.from;
-                if (dateRange.to) params.to = dateRange.to;
-                if (tags.length > 0) params.tags = tags.join(",");
-                window.open(api.exportCsvUrl("invoices", params), "_blank");
-              }}
-            >
-              <Download className="h-4 w-4 mr-2" /> {t("common.export_csv")}
-            </Button>
-            <Button
-              onClick={() => navigate("/invoices/new")}
-              title={`${t("invoices.new_invoice")} (N)`}
-            >
-              <Plus className="h-4 w-4 mr-2" /> {t("invoices.new_invoice")}
-            </Button>
+            {can("invoices", "export") && (
+              <Button
+                variant="outline"
+                onClick={() => {
+                  const params: Record<string, string> = {};
+                  if (search) params.search = search;
+                  if (statusFilter !== "all") params.status = statusFilter;
+                  if (customerIdFilter) params.customer_id = customerIdFilter;
+                  if (dateRange.from) params.from = dateRange.from;
+                  if (dateRange.to) params.to = dateRange.to;
+                  if (tags.length > 0) params.tags = tags.join(",");
+                  window.open(api.exportCsvUrl("invoices", params), "_blank");
+                }}
+              >
+                <Download className="h-4 w-4 mr-2" /> {t("common.export_csv")}
+              </Button>
+            )}
+            {canCreate && (
+              <Button
+                onClick={() => navigate("/invoices/new")}
+                title={`${t("invoices.new_invoice")} (N)`}
+              >
+                <Plus className="h-4 w-4 mr-2" /> {t("invoices.new_invoice")}
+              </Button>
+            )}
             <ColumnVisibilityMenu storageKey="inkvoice-cols-invoices" columns={invoiceColumns} />
           </div>
         )}
@@ -383,34 +398,46 @@ export default function Invoices() {
         </BatchActionToolbar>
       ) : (
         <BatchActionToolbar selectedCount={selected.size} onClear={() => setSelected(new Set())}>
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => setBatchAction({ action: "mark-sent", label: t("invoices.mark_sent") })}
-          >
-            {t("invoices.mark_sent")}
-          </Button>
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => setBatchAction({ action: "mark-paid", label: t("invoices.mark_paid") })}
-          >
-            {t("invoices.mark_paid")}
-          </Button>
-          <Button
-            size="xs"
-            variant="outline"
-            onClick={() => setBatchAction({ action: "void", label: t("invoices.void") })}
-          >
-            {t("invoices.void")}
-          </Button>
-          <Button
-            size="xs"
-            variant="destructive"
-            onClick={() => setBatchAction({ action: "delete", label: t("common.delete") })}
-          >
-            <Trash2 className="h-3.5 w-3.5 mr-1" /> {t("common.delete")}
-          </Button>
+          {can("invoices", "update") && (
+            <>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() =>
+                  setBatchAction({ action: "mark-sent", label: t("invoices.mark_sent") })
+                }
+              >
+                {t("invoices.mark_sent")}
+              </Button>
+              <Button
+                size="xs"
+                variant="outline"
+                onClick={() =>
+                  setBatchAction({ action: "mark-paid", label: t("invoices.mark_paid") })
+                }
+              >
+                {t("invoices.mark_paid")}
+              </Button>
+            </>
+          )}
+          {can("invoices", "void") && (
+            <Button
+              size="xs"
+              variant="outline"
+              onClick={() => setBatchAction({ action: "void", label: t("invoices.void") })}
+            >
+              {t("invoices.void")}
+            </Button>
+          )}
+          {can("invoices", "delete") && (
+            <Button
+              size="xs"
+              variant="destructive"
+              onClick={() => setBatchAction({ action: "delete", label: t("common.delete") })}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" /> {t("common.delete")}
+            </Button>
+          )}
         </BatchActionToolbar>
       )}
 
@@ -418,13 +445,15 @@ export default function Invoices() {
         <Table stickyFirstColumn>
           <TableHeader>
             <TableRow>
-              <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
-                <Checkbox
-                  checked={allSelected}
-                  indeterminate={someSelected && !allSelected}
-                  onCheckedChange={toggleAll}
-                />
-              </TableCell>
+              {canBatch && (
+                <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={allSelected}
+                    indeterminate={someSelected && !allSelected}
+                    onCheckedChange={toggleAll}
+                  />
+                </TableCell>
+              )}
               {isColVisible("invoice_number") && (
                 <SortableColumnHeader
                   label={t("invoices.invoice_number")}
@@ -492,7 +521,7 @@ export default function Invoices() {
                       title={t("invoices.empty_title")}
                       description={t("invoices.empty_description")}
                       actionLabel={t("invoices.new_invoice")}
-                      onAction={() => navigate("/invoices/new")}
+                      onAction={canCreate ? () => navigate("/invoices/new") : undefined}
                     />
                   )}
                 </TableCell>
@@ -521,12 +550,14 @@ export default function Invoices() {
                   )}
                   onClick={isTrash ? undefined : () => navigate(`/invoices/${inv.id}`)}
                 >
-                  <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
-                    <Checkbox
-                      checked={selected.has(inv.id)}
-                      onCheckedChange={() => toggleSelect(inv.id)}
-                    />
-                  </TableCell>
+                  {canBatch && (
+                    <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                      <Checkbox
+                        checked={selected.has(inv.id)}
+                        onCheckedChange={() => toggleSelect(inv.id)}
+                      />
+                    </TableCell>
+                  )}
                   {isColVisible("invoice_number") && (
                     <TableCell className="font-medium">
                       <span className="inline-flex items-center gap-1.5">

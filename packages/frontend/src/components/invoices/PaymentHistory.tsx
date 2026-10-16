@@ -13,6 +13,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -44,6 +45,7 @@ export function PaymentHistory({
   onPaymentDeleted,
 }: Props) {
   const { t } = useTranslation();
+  const canEdit = useCan()("invoices", "update");
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const balanceDue = total - amountPaid;
@@ -114,15 +116,17 @@ export function PaymentHistory({
                   {formatCurrency(p.amount, currency)}
                 </TableCell>
                 <TableCell>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    aria-label={t("common.delete")}
-                    onClick={() => setDeleteId(p.id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
+                  {canEdit && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7"
+                      aria-label={t("common.delete")}
+                      onClick={() => setDeleteId(p.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  )}
                 </TableCell>
               </TableRow>
             ))}

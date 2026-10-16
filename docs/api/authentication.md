@@ -60,17 +60,32 @@ Returns the currently authenticated user's profile.
   "success": true,
   "data": {
     "id": "abc123",
-    "username": "admin",
-    "email": "admin@example.com",
-    "display_name": "Admin",
-    "is_admin": true,
-    "permissions": [
-      { "resource": "invoices", "action": "read" },
-      { "resource": "invoices", "action": "create" }
-    ]
+    "username": "viewer",
+    "email": "viewer@example.com",
+    "display_name": "Viewer",
+    "is_admin": false,
+    "role": "Viewer",
+    "permissions": [],
+    "access": {
+      "invoices": ["read", "export"],
+      "customers": ["read", "export"],
+      "products": ["read", "export"],
+      "expenses": ["read", "export"],
+      "templates": ["read"],
+      "settings": ["read"],
+      "tax_definitions": ["read"],
+      "users": []
+    }
   }
 }
 ```
+
+`access` lists what the user may do on each resource (`read`, `create`,
+`update`, `delete`, `publish`, `void`, `export`), worked out from their role
+and any per-user `permissions`. Use it to hide actions a user cannot take; the
+server checks every request regardless and answers `403 Forbidden` otherwise.
+Quotes and recurring invoices count as `invoices`. The login response carries
+the same user object.
 
 ## API Tokens (for integrations)
 

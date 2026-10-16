@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 import { formatDate } from "@/lib/utils";
@@ -22,6 +23,12 @@ const RECURRING_TAB_SEGMENTS = new Set(["all", "active", "paused", "completed"])
 
 export default function RecurringInvoices() {
   const { t } = useTranslation();
+  // Recurring schedules are covered by the invoices permission.
+  const can = useCan();
+  const canEdit = can("invoices", "update");
+  const canGenerate = can("invoices", "create");
+  const canDelete = can("invoices", "delete");
+  const hasActions = canEdit || canGenerate || canDelete;
   const [items, setItems] = useState<any[]>([]);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -102,9 +109,11 @@ export default function RecurringInvoices() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{t("recurring.title")}</h1>
-        <Button onClick={() => navigate("/recurring/new")}>
-          <Plus className="h-4 w-4 mr-2" /> {t("recurring.new_schedule")}
-        </Button>
+        {canGenerate && (
+          <Button onClick={() => navigate("/recurring/new")}>
+            <Plus className="h-4 w-4 mr-2" /> {t("recurring.new_schedule")}
+          </Button>
+        )}
       </div>
 
       <Tabs value={statusFilter} onValueChange={(v) => navigate(`/recurring/${v}`)}>
@@ -138,15 +147,20 @@ export default function RecurringInvoices() {
               <TableCell className="font-medium text-sm text-muted-foreground">
                 {t("recurring.status")}
               </TableCell>
-              <TableCell className="font-medium text-sm text-muted-foreground">
-                {t("common.actions")}
-              </TableCell>
+              {hasActions && (
+                <TableCell className="font-medium text-sm text-muted-foreground">
+                  {t("common.actions")}
+                </TableCell>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
             {items.length === 0 && (
               <TableRow>
-                <TableCell colSpan={7} className="text-center py-12 text-muted-foreground">
+                <TableCell
+                  colSpan={hasActions ? 7 : 6}
+                  className="text-center py-12 text-muted-foreground"
+                >
                   <div className="space-y-2">
                     <Repeat className="h-8 w-8 mx-auto text-muted-foreground/50" />
                     <p>{t("recurring.no_schedules")}</p>
@@ -173,22 +187,22 @@ export default function RecurringInvoices() {
                     {item.status}
                   </Badge>
                 </TableCell>
-                <TableCell>
-                  <div className="flex gap-1">
-                    {item.status !== "completed" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => navigate(`/recurring/${item.id}/edit`)}
-                        title={t("common.edit")}
-                        aria-label={t("common.edit")}
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    {item.status === "active" && (
-                      <>
+                {hasActions && (
+                  <TableCell>
+                    <div className="flex gap-1">
+                      {item.status !== "completed" && canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => navigate(`/recurring/${item.id}/edit`)}
+                          title={t("common.edit")}
+                          aria-label={t("common.edit")}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {item.status === "active" && canEdit && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -199,6 +213,8 @@ export default function RecurringInvoices() {
                         >
                           <Pause className="h-3.5 w-3.5" />
                         </Button>
+                      )}
+                      {item.status === "active" && canGenerate && (
                         <Button
                           variant="ghost"
                           size="icon"
@@ -209,32 +225,34 @@ export default function RecurringInvoices() {
                         >
                           <RefreshCw className="h-3.5 w-3.5" />
                         </Button>
-                      </>
-                    )}
-                    {item.status === "paused" && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleResume(item.id)}
-                        title={t("recurring.resume")}
-                        aria-label={t("recurring.resume")}
-                      >
-                        <Play className="h-3.5 w-3.5" />
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setDeleteId(item.id)}
-                      title={t("common.delete")}
-                      aria-label={t("common.delete")}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
-                  </div>
-                </TableCell>
+                      )}
+                      {item.status === "paused" && canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => handleResume(item.id)}
+                          title={t("recurring.resume")}
+                          aria-label={t("recurring.resume")}
+                        >
+                          <Play className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7"
+                          onClick={() => setDeleteId(item.id)}
+                          title={t("common.delete")}
+                          aria-label={t("common.delete")}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

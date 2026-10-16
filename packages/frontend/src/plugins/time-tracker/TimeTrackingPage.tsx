@@ -37,6 +37,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { canUser } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { formatCurrency } from "@/lib/utils";
 import { useAuthStore } from "@/stores/auth.store";
@@ -154,12 +155,8 @@ export default function TimeTrackingPage() {
     useSettingsStore((s) => s.settings.base_currency || s.settings.currency) || "USD";
   const { user } = useAuthStore();
   const isAdmin = !!user?.is_admin;
-  const canBill =
-    !!user &&
-    (user.is_admin ||
-      user.role === "Owner" ||
-      user.role === "Admin" ||
-      (user.permissions ?? []).some((p) => p.resource === "invoices" && p.action === "create"));
+  // Billing time writes an invoice (POST /invoice needs invoices:create).
+  const canBill = canUser(user, "invoices", "create");
 
   const [projects, setProjects] = useState<TtProject[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);

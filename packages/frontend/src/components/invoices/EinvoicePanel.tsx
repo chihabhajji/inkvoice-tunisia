@@ -14,6 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 import { formatDate } from "@/lib/utils";
@@ -40,6 +41,7 @@ const FORMAT_LABELS: Record<string, string> = {
 
 function EinvoicePanel({ invoiceId }: Props) {
   const { t } = useTranslation();
+  const can = useCan();
   const [records, setRecords] = useState<EinvoiceRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [emitting, setEmitting] = useState(false);
@@ -98,14 +100,16 @@ function EinvoicePanel({ invoiceId }: Props) {
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" onClick={emit} disabled={emitting}>
-            {emitting ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Zap className="h-3.5 w-3.5" />
-            )}
-            {t("einvoice.emit")}
-          </Button>
+          {can("invoices", "publish") && (
+            <Button size="sm" onClick={emit} disabled={emitting}>
+              {emitting ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Zap className="h-3.5 w-3.5" />
+              )}
+              {t("einvoice.emit")}
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -155,14 +159,16 @@ function EinvoicePanel({ invoiceId }: Props) {
                     </div>
                   </TableCell>
                   <TableCell>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => setDeleting(rec)}
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </Button>
+                    {can("invoices", "delete") && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => setDeleting(rec)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </Button>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}

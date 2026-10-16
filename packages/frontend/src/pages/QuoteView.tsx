@@ -42,6 +42,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 import { pushRecentlyViewed } from "@/lib/recently-viewed";
@@ -79,6 +80,8 @@ export default function QuoteView() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
+  // Quotes are covered by the invoices permission.
+  const can = useCan();
   const [quote, setQuote] = useState<any>(null);
   const [confirmAction, setConfirmAction] = useState<{
     type: string;
@@ -286,6 +289,14 @@ export default function QuoteView() {
     }
   };
 
+  const canPublishMenu =
+    can("invoices", "publish") && !quote.is_published && ["draft", "sent"].includes(quote.status);
+  const hasMenu =
+    can("invoices", "create") ||
+    canPublishMenu ||
+    !!quote.is_published ||
+    can("invoices", "delete");
+
   return (
     <div className="max-w-4xl space-y-6">
       {/* Breadcrumbs */}
@@ -307,7 +318,7 @@ export default function QuoteView() {
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
-          {quote.status === "draft" && (
+          {quote.status === "draft" && can("invoices", "update") && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/quotes/${id}/edit`)}>
               <Pencil className="h-4 w-4 mr-1" /> {t("common.edit")}
             </Button>
@@ -319,91 +330,101 @@ export default function QuoteView() {
             {t("public.print_save_pdf")}
           </Button>
 
-          {["draft", "sent"].includes(quote.status) && (
+          {["draft", "sent"].includes(quote.status) && can("invoices", "publish") && (
             <Button size="sm" variant="outline" onClick={() => setSendDialogOpen(true)}>
               <Send className="h-4 w-4 mr-1" /> {t("invoices.send")}
             </Button>
           )}
 
           {(["sent", "accepted"].includes(quote.status) ||
-            (!!quote.is_published && quote.status === "draft")) && (
-            <Button size="sm" onClick={() => setConvertOpen(true)}>
-              <FileText className="h-4 w-4 mr-1" /> {t("quotes.convert_to_invoice")}
-            </Button>
-          )}
-          {(quote.status === "sent" || (!!quote.is_published && quote.status === "draft")) && (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  setConfirmAction({
-                    type: "accept",
-                    title: t("quotes.accept_title"),
-                    description: t("quotes.confirm_accept"),
-                  })
-                }
-              >
-                <CheckCircle className="h-4 w-4 mr-1" /> {t("quotes.accept")}
+            (!!quote.is_published && quote.status === "draft")) &&
+            can("invoices", "create") && (
+              <Button size="sm" onClick={() => setConvertOpen(true)}>
+                <FileText className="h-4 w-4 mr-1" /> {t("quotes.convert_to_invoice")}
               </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() =>
-                  setConfirmAction({
-                    type: "reject",
-                    title: t("quotes.reject_title"),
-                    description: t("quotes.confirm_reject"),
-                  })
-                }
-              >
-                <Ban className="h-4 w-4 mr-1" /> {t("quotes.reject")}
-              </Button>
-            </>
-          )}
-
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              render={
+            )}
+          {(quote.status === "sent" || (!!quote.is_published && quote.status === "draft")) &&
+            can("invoices", "update") && (
+              <>
                 <Button
+                  size="sm"
                   variant="outline"
-                  size="icon"
-                  className="h-8 w-8"
-                  aria-label={t("a11y.more_actions")}
-                />
-              }
-            >
-              <MoreHorizontal className="h-4 w-4" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
-              <DropdownMenuItem onClick={handleDuplicate}>
-                <Copy className="h-4 w-4 mr-2" /> {t("invoices.duplicate")}
-              </DropdownMenuItem>
-              {!quote.is_published && ["draft", "sent"].includes(quote.status) && (
-                <DropdownMenuItem onClick={handlePublish}>
-                  <Globe className="h-4 w-4 mr-2" /> {t("invoices.publish")}
-                </DropdownMenuItem>
-              )}
-              {!!quote.is_published && (
-                <DropdownMenuItem onClick={copyShareLink}>
-                  <Share2 className="h-4 w-4 mr-2" /> {t("invoices.copy_link")}
-                </DropdownMenuItem>
-              )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive"
-                onClick={() =>
-                  setConfirmAction({
-                    type: "delete",
-                    title: t("quotes.delete_title"),
-                    description: t("quotes.confirm_delete"),
-                  })
+                  onClick={() =>
+                    setConfirmAction({
+                      type: "accept",
+                      title: t("quotes.accept_title"),
+                      description: t("quotes.confirm_accept"),
+                    })
+                  }
+                >
+                  <CheckCircle className="h-4 w-4 mr-1" /> {t("quotes.accept")}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() =>
+                    setConfirmAction({
+                      type: "reject",
+                      title: t("quotes.reject_title"),
+                      description: t("quotes.confirm_reject"),
+                    })
+                  }
+                >
+                  <Ban className="h-4 w-4 mr-1" /> {t("quotes.reject")}
+                </Button>
+              </>
+            )}
+
+          {hasMenu && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="h-8 w-8"
+                    aria-label={t("a11y.more_actions")}
+                  />
                 }
               >
-                <Trash2 className="h-4 w-4 mr-2" /> {t("common.delete")}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+                <MoreHorizontal className="h-4 w-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {can("invoices", "create") && (
+                  <DropdownMenuItem onClick={handleDuplicate}>
+                    <Copy className="h-4 w-4 mr-2" /> {t("invoices.duplicate")}
+                  </DropdownMenuItem>
+                )}
+                {canPublishMenu && (
+                  <DropdownMenuItem onClick={handlePublish}>
+                    <Globe className="h-4 w-4 mr-2" /> {t("invoices.publish")}
+                  </DropdownMenuItem>
+                )}
+                {!!quote.is_published && (
+                  <DropdownMenuItem onClick={copyShareLink}>
+                    <Share2 className="h-4 w-4 mr-2" /> {t("invoices.copy_link")}
+                  </DropdownMenuItem>
+                )}
+                {can("invoices", "delete") && (
+                  <>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      className="text-destructive"
+                      onClick={() =>
+                        setConfirmAction({
+                          type: "delete",
+                          title: t("quotes.delete_title"),
+                          description: t("quotes.confirm_delete"),
+                        })
+                      }
+                    >
+                      <Trash2 className="h-4 w-4 mr-2" /> {t("common.delete")}
+                    </DropdownMenuItem>
+                  </>
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
 
