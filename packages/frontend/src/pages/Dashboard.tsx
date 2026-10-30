@@ -17,6 +17,7 @@ import { api } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 import { formatCurrency } from "@/lib/utils";
@@ -79,6 +80,7 @@ function Sparkline({ data, color }: { data: number[]; color: string }) {
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const canCreateInvoice = useCan()("invoices", "create");
   const [stats, setStats] = useState<any>(null);
   const [chart, setChart] = useState<any[]>([]);
   const [recent, setRecent] = useState<any[]>([]);
@@ -253,10 +255,12 @@ export default function Dashboard() {
             <ArrowUpRight />
             <span>{t("common.view_all")}</span>
           </Button>
-          <Button type="button" size="sm" onClick={() => navigate("/invoices/new")}>
-            <Plus />
-            <span>{t("invoices.new_invoice")}</span>
-          </Button>
+          {canCreateInvoice && (
+            <Button type="button" size="sm" onClick={() => navigate("/invoices/new")}>
+              <Plus />
+              <span>{t("invoices.new_invoice")}</span>
+            </Button>
+          )}
         </div>
       </div>
 

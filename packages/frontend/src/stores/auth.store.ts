@@ -10,6 +10,8 @@ interface User {
   /** RBAC role ("Owner" | "Admin" | …); null/undefined on legacy rows. */
   role?: string | null;
   permissions?: { resource: string; action: string }[];
+  /** What the server lets this user do, per resource (see hooks/use-can.ts). */
+  access?: Partial<Record<string, string[]>>;
   /** Present when the current session was minted via the ops impersonation flow. */
   impersonation?: { impersonator_id: string; reason: string | null } | null;
 }

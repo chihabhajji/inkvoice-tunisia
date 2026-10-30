@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
+import { useCan } from "@/hooks/use-can";
 import { isPositive, maxLength, required, useFormValidation } from "@/hooks/use-form-validation";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
@@ -30,6 +31,9 @@ export default function ProductForm({ onSave }: Props) {
   const { t } = useTranslation();
   const currency = useSettingsStore((s) => s.settings.currency);
   const isEdit = !!id && id !== "new";
+  const can = useCan();
+  // Without update rights the product opens read-only: same page, no saving.
+  const readOnly = isEdit && !can("products", "update");
   // Set when arriving via "Add product" from another page (e.g. the invoice
   // form): pre-fill the name and return to the caller on save.
   const navState = location.state as { returnTo?: string; prefillName?: string } | null;
@@ -136,7 +140,7 @@ export default function ProductForm({ onSave }: Props) {
             ]}
           />
           <h1 className="text-2xl font-semibold tracking-tight mt-2">
-            {isEdit ? t("products.edit_product") : t("products.new_product")}
+            {readOnly ? form.name : isEdit ? t("products.edit_product") : t("products.new_product")}
           </h1>
         </div>
         <div className="flex gap-2">
@@ -146,127 +150,131 @@ export default function ProductForm({ onSave }: Props) {
             size="sm"
             onClick={() => navigate(navState?.returnTo || "/products/all")}
           >
-            {t("common.cancel")}
+            {readOnly ? t("common.back") : t("common.cancel")}
           </Button>
-          <Button type="submit" size="sm" disabled={loading}>
-            <Save className="h-4 w-4" />
-            {loading ? t("common.saving") : t("common.save")}
-          </Button>
+          {!readOnly && (
+            <Button type="submit" size="sm" disabled={loading}>
+              <Save className="h-4 w-4" />
+              {loading ? t("common.saving") : t("common.save")}
+            </Button>
+          )}
         </div>
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("products.product_info")}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <FormField label={t("products.name")} error={getError("name")} required>
-            <Input
-              value={form.name}
-              onChange={(e) => setField("name", e.target.value)}
-              onBlur={() => onBlur("name", form)}
-              aria-invalid={!!getError("name")}
-            />
-          </FormField>
-
-          <FormField label={t("products.description")} error={getError("description")}>
-            <Textarea
-              value={form.description}
-              onChange={(e) => setField("description", e.target.value)}
-              onBlur={() => onBlur("description", form)}
-              aria-invalid={!!getError("description")}
-              rows={2}
-            />
-          </FormField>
-
-          <div className="grid grid-cols-2 gap-4">
-            <FormField label={t("products.sku")} error={getError("sku")}>
+      <fieldset disabled={readOnly} className="min-w-0 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">{t("products.product_info")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <FormField label={t("products.name")} error={getError("name")} required>
               <Input
-                value={form.sku}
-                onChange={(e) => setField("sku", e.target.value)}
-                onBlur={() => onBlur("sku", form)}
-                aria-invalid={!!getError("sku")}
+                value={form.name}
+                onChange={(e) => setField("name", e.target.value)}
+                onBlur={() => onBlur("name", form)}
+                aria-invalid={!!getError("name")}
               />
             </FormField>
-            <FormField label={t("products.unit_price")} error={getError("unit_price")} required>
-              <NumberInput
-                value={form.unit_price}
-                min={0}
-                decimals={moneyDecimals(currency)}
-                onValueChange={(v) => {
-                  const newForm = { ...form, unit_price: v };
-                  setForm(newForm);
-                  onChange("unit_price" as any, newForm as any);
-                  onBlur("unit_price", newForm);
-                }}
-                aria-invalid={!!getError("unit_price")}
+
+            <FormField label={t("products.description")} error={getError("description")}>
+              <Textarea
+                value={form.description}
+                onChange={(e) => setField("description", e.target.value)}
+                onBlur={() => onBlur("description", form)}
+                aria-invalid={!!getError("description")}
+                rows={2}
               />
             </FormField>
-          </div>
-        </CardContent>
-      </Card>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("products.category")}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
-            <FormField label={t("products.unit")}>
-              <select
-                value={form.unit}
-                onChange={(e) => setField("unit", e.target.value)}
-                className="form-select"
-              >
-                {units.map((u: any) => (
-                  <option key={u.id} value={u.name}>
-                    {u.symbol ? `${u.name} (${u.symbol})` : u.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label={t("products.category")}>
-              <select
-                value={form.category}
-                onChange={(e) => setField("category", e.target.value)}
-                className="form-select"
-              >
-                {categories.map((cat: any) => (
-                  <option key={cat.id} value={cat.name}>
-                    {cat.name}
-                  </option>
-                ))}
-              </select>
-            </FormField>
-            <FormField label={t("products.default_tax")}>
-              <select
-                value={form.tax_id}
-                onChange={(e) => setField("tax_id", e.target.value)}
-                className="form-select"
-              >
-                <option value="">{t("products.no_default_tax")}</option>
-                {taxDefs.map((td: any) => (
-                  <option key={td.id} value={td.id}>
-                    {td.name} ({td.rate}%)
-                  </option>
-                ))}
-              </select>
-            </FormField>
-          </div>
+            <div className="grid grid-cols-2 gap-4">
+              <FormField label={t("products.sku")} error={getError("sku")}>
+                <Input
+                  value={form.sku}
+                  onChange={(e) => setField("sku", e.target.value)}
+                  onBlur={() => onBlur("sku", form)}
+                  aria-invalid={!!getError("sku")}
+                />
+              </FormField>
+              <FormField label={t("products.unit_price")} error={getError("unit_price")} required>
+                <NumberInput
+                  value={form.unit_price}
+                  min={0}
+                  decimals={moneyDecimals(currency)}
+                  onValueChange={(v) => {
+                    const newForm = { ...form, unit_price: v };
+                    setForm(newForm);
+                    onChange("unit_price" as any, newForm as any);
+                    onBlur("unit_price", newForm);
+                  }}
+                  aria-invalid={!!getError("unit_price")}
+                />
+              </FormField>
+            </div>
+          </CardContent>
+        </Card>
 
-          <div className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              id="is_active"
-              checked={!!form.is_active}
-              onChange={(e) => setForm({ ...form, is_active: e.target.checked ? 1 : 0 })}
-              className="rounded"
-            />
-            <Label htmlFor="is_active" className="text-sm font-normal">
-              {t("common.active")}
-            </Label>
-          </div>
-        </CardContent>
-      </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">{t("products.category")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <FormField label={t("products.unit")}>
+                <select
+                  value={form.unit}
+                  onChange={(e) => setField("unit", e.target.value)}
+                  className="form-select"
+                >
+                  {units.map((u: any) => (
+                    <option key={u.id} value={u.name}>
+                      {u.symbol ? `${u.name} (${u.symbol})` : u.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label={t("products.category")}>
+                <select
+                  value={form.category}
+                  onChange={(e) => setField("category", e.target.value)}
+                  className="form-select"
+                >
+                  {categories.map((cat: any) => (
+                    <option key={cat.id} value={cat.name}>
+                      {cat.name}
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label={t("products.default_tax")}>
+                <select
+                  value={form.tax_id}
+                  onChange={(e) => setField("tax_id", e.target.value)}
+                  className="form-select"
+                >
+                  <option value="">{t("products.no_default_tax")}</option>
+                  {taxDefs.map((td: any) => (
+                    <option key={td.id} value={td.id}>
+                      {td.name} ({td.rate}%)
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                id="is_active"
+                checked={!!form.is_active}
+                onChange={(e) => setForm({ ...form, is_active: e.target.checked ? 1 : 0 })}
+                className="rounded"
+              />
+              <Label htmlFor="is_active" className="text-sm font-normal">
+                {t("common.active")}
+              </Label>
+            </div>
+          </CardContent>
+        </Card>
+      </fieldset>
     </form>
   );
 }

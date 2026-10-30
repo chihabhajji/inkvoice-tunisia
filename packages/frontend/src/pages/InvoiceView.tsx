@@ -50,6 +50,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { isInvoiceFormEditable, STATUS_COLORS } from "@/lib/constants";
 import { formatApiError } from "@/lib/format-api-error";
@@ -66,6 +67,7 @@ export default function InvoiceView({ onBack }: Props) {
   const einvoiceEnabled = useSettingsStore((s) => s.settings.einvoice_enabled === "true");
   const peppolEnabled = useSettingsStore((s) => s.settings.peppol_enabled === "true");
   const franceEnabled = useSettingsStore((s) => s.settings.france_enabled === "true");
+  const can = useCan();
   const { id } = useParams();
   const navigate = useNavigate();
   const [invoice, setInvoice] = useState<any>(null);
@@ -325,7 +327,7 @@ export default function InvoiceView({ onBack }: Props) {
         </div>
 
         <div className="flex items-center gap-2 ml-auto">
-          {isInvoiceFormEditable(invoice.status) && (
+          {isInvoiceFormEditable(invoice.status) && can("invoices", "update") && (
             <Button variant="outline" size="sm" onClick={() => navigate(`/invoices/${id}/edit`)}>
               <Pencil className="h-4 w-4 mr-1" /> {t("common.edit")}
             </Button>
@@ -337,7 +339,7 @@ export default function InvoiceView({ onBack }: Props) {
             <Printer className="h-4 w-4 mr-1" /> {t("invoices.print")}
           </Button>
 
-          {invoice.status === "draft" && (
+          {invoice.status === "draft" && can("invoices", "update") && (
             <Button
               size="sm"
               onClick={() =>
@@ -351,22 +353,25 @@ export default function InvoiceView({ onBack }: Props) {
               <Send className="h-4 w-4 mr-1" /> {t("invoices.mark_sent")}
             </Button>
           )}
-          {["draft", "sent"].includes(invoice.status) && invoice.type !== "credit_note" && (
-            <Button size="sm" variant="outline" onClick={() => setSendDialogOpen(true)}>
-              <Send className="h-4 w-4 mr-1" /> {t("invoices.send")}
-            </Button>
-          )}
-          {["sent", "partially_paid", "overdue"].includes(invoice.status) && (
-            <Button size="sm" variant="outline" onClick={() => setPaymentDialogOpen(true)}>
-              {t("invoices.record_payment")}
-            </Button>
-          )}
-          {["sent", "partially_paid", "overdue"].includes(invoice.status) && (
-            <Button size="sm" onClick={handleMarkPaid}>
-              <CheckCircle className="h-4 w-4 mr-1" /> {t("invoices.mark_paid")}
-            </Button>
-          )}
-          {invoice.status === "paid" && (
+          {["draft", "sent"].includes(invoice.status) &&
+            invoice.type !== "credit_note" &&
+            can("invoices", "publish") && (
+              <Button size="sm" variant="outline" onClick={() => setSendDialogOpen(true)}>
+                <Send className="h-4 w-4 mr-1" /> {t("invoices.send")}
+              </Button>
+            )}
+          {["sent", "partially_paid", "overdue"].includes(invoice.status) &&
+            can("invoices", "update") && (
+              <>
+                <Button size="sm" variant="outline" onClick={() => setPaymentDialogOpen(true)}>
+                  {t("invoices.record_payment")}
+                </Button>
+                <Button size="sm" onClick={handleMarkPaid}>
+                  <CheckCircle className="h-4 w-4 mr-1" /> {t("invoices.mark_paid")}
+                </Button>
+              </>
+            )}
+          {invoice.status === "paid" && can("invoices", "update") && (
             <Button size="sm" variant="outline" onClick={handleMarkComplete}>
               <CheckCircle className="h-4 w-4 mr-1" /> {t("invoices.mark_complete")}
             </Button>
@@ -386,14 +391,16 @@ export default function InvoiceView({ onBack }: Props) {
               <MoreHorizontal className="h-4 w-4" />
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end">
-              {invoice.status === "draft" && (
+              {invoice.status === "draft" && can("invoices", "create") && (
                 <DropdownMenuItem onClick={() => setConsolidateOpen(true)}>
                   <Layers className="h-4 w-4 mr-2" /> {t("invoices.consolidate")}
                 </DropdownMenuItem>
               )}
-              <DropdownMenuItem onClick={handleDuplicate}>
-                <Copy className="h-4 w-4 mr-2" /> {t("invoices.duplicate")}
-              </DropdownMenuItem>
+              {can("invoices", "create") && (
+                <DropdownMenuItem onClick={handleDuplicate}>
+                  <Copy className="h-4 w-4 mr-2" /> {t("invoices.duplicate")}
+                </DropdownMenuItem>
+              )}
               <DropdownMenuItem
                 onClick={async () => {
                   try {
@@ -406,18 +413,19 @@ export default function InvoiceView({ onBack }: Props) {
               >
                 <Braces className="h-4 w-4 mr-2" /> {t("invoices.copy_as_json")}
               </DropdownMenuItem>
-              {invoice.type !== "credit_note" && (
+              {invoice.type !== "credit_note" && can("invoices", "create") && (
                 <DropdownMenuItem onClick={handleDuplicateAsQuote}>
                   <ClipboardList className="h-4 w-4 mr-2" /> {t("invoices.duplicate_as_quote")}
                 </DropdownMenuItem>
               )}
               {["sent", "paid", "overdue", "complete"].includes(invoice.status) &&
-                invoice.type !== "credit_note" && (
+                invoice.type !== "credit_note" &&
+                can("invoices", "create") && (
                   <DropdownMenuItem onClick={handleCreateCreditNote}>
                     <ReceiptText className="h-4 w-4 mr-2" /> {t("invoices.create_credit_note")}
                   </DropdownMenuItem>
                 )}
-              {invoice.status === "sent" && (
+              {invoice.status === "sent" && can("invoices", "void") && (
                 <DropdownMenuItem
                   onClick={() =>
                     setConfirmAction({
@@ -431,61 +439,80 @@ export default function InvoiceView({ onBack }: Props) {
                 </DropdownMenuItem>
               )}
               {["sent", "partially_paid", "paid", "overdue", "complete"].includes(invoice.status) &&
-                !invoice.is_published && (
+                !invoice.is_published &&
+                can("invoices", "publish") && (
                   <DropdownMenuItem onClick={handlePublish}>
                     <Globe className="h-4 w-4 mr-2" /> {t("invoices.publish")}
                   </DropdownMenuItem>
                 )}
               {!!invoice.is_published && (
                 <>
-                  <DropdownMenuItem
-                    onClick={() =>
-                      setConfirmAction({
-                        type: "unpublish",
-                        title: t("invoices.unpublish"),
-                        description: t("invoices.confirm_unpublish"),
-                      })
-                    }
-                  >
-                    <Globe className="h-4 w-4 mr-2" /> {t("invoices.unpublish")}
-                  </DropdownMenuItem>
+                  {can("invoices", "publish") && (
+                    <DropdownMenuItem
+                      onClick={() =>
+                        setConfirmAction({
+                          type: "unpublish",
+                          title: t("invoices.unpublish"),
+                          description: t("invoices.confirm_unpublish"),
+                        })
+                      }
+                    >
+                      <Globe className="h-4 w-4 mr-2" /> {t("invoices.unpublish")}
+                    </DropdownMenuItem>
+                  )}
                   <DropdownMenuItem onClick={copyShareLink}>
                     <Share2 className="h-4 w-4 mr-2" /> {t("invoices.copy_link")}
                   </DropdownMenuItem>
                 </>
               )}
-              <DropdownMenuSeparator />
-              <DropdownMenuItem
-                className="text-destructive focus:text-destructive"
-                onClick={() =>
-                  setConfirmAction({
-                    type: "delete",
-                    title: t("invoices.delete_invoice"),
-                    description: t("invoices.confirm_delete_invoice"),
-                  })
-                }
-              >
-                <Trash2 className="h-4 w-4 mr-2" /> {t("common.delete")}
-              </DropdownMenuItem>
+              {can("invoices", "delete") && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    onClick={() =>
+                      setConfirmAction({
+                        type: "delete",
+                        title: t("invoices.delete_invoice"),
+                        description: t("invoices.confirm_delete_invoice"),
+                      })
+                    }
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" /> {t("common.delete")}
+                  </DropdownMenuItem>
+                </>
+              )}
             </DropdownMenuContent>
           </DropdownMenu>
         </div>
       </div>
 
-      {/* Tags (editable on any status) */}
-      <div className="flex items-start gap-2 rounded-lg border bg-muted/30 px-3 py-2">
-        <span className="mt-2 shrink-0 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-          {t("tags.title")}
-        </span>
-        <TagInput
-          value={tags}
-          onChange={handleTagsChange}
-          suggestions={tagSuggestions}
-          placeholder={t("tags.placeholder")}
-          ariaLabel={t("tags.title")}
-          className="bg-transparent"
-        />
-      </div>
+      {/* Tags (editable on any status, read-only without update rights) */}
+      {(can("invoices", "update") || tags.length > 0) && (
+        <div className="flex items-start gap-2 rounded-lg border bg-muted/30 px-3 py-2">
+          <span className="mt-2 shrink-0 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+            {t("tags.title")}
+          </span>
+          {can("invoices", "update") ? (
+            <TagInput
+              value={tags}
+              onChange={handleTagsChange}
+              suggestions={tagSuggestions}
+              placeholder={t("tags.placeholder")}
+              ariaLabel={t("tags.title")}
+              className="bg-transparent"
+            />
+          ) : (
+            <div className="flex min-h-9 flex-wrap items-center gap-1.5">
+              {tags.map((tag) => (
+                <Badge key={tag.toLowerCase()} variant="secondary">
+                  {tag}
+                </Badge>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Public share link panel */}
       {!!invoice.is_published && invoice.share_token && (

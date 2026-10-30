@@ -102,11 +102,19 @@ cookie.
       "display_name": "Admin",
       "is_admin": true,
       "role": "Owner",
-      "permissions": []
+      "permissions": [],
+      "access": {
+        "invoices": ["read", "create", "update", "delete", "publish", "void", "export"],
+        "...": []
+      }
     }
   }
 }
 ```
+
+`user` has the same shape as `GET /api/v1/auth/me`; its `access` map says what
+the user may do on each resource, so the app can hide actions the server would
+refuse (see [Authentication](./authentication)).
 
 The token is shown only once; the server stores only its SHA-256 hash. Wrong
 password and unknown user both return `401` with

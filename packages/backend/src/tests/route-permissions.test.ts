@@ -11,9 +11,12 @@ import { createApp } from "../app";
 import { closeDatabase, getDb, initDatabase } from "../database/connection";
 import { runMigrations } from "../database/migrations";
 import { seed } from "../database/seed";
+import { hasPermission } from "../middleware/auth";
 import { createToken } from "../services/api-token.service";
 import { resetEnvCache } from "../utils/env";
 import { signToken } from "../utils/jwt";
+import { hashPassword } from "../utils/password";
+import { ALL_ACTIONS, RESOURCES } from "../utils/permissions";
 
 const TEST_DB = "./data/test-route-permissions.db";
 
@@ -264,5 +267,61 @@ describe("roles that may write", () => {
     expect(getDb().query("SELECT deleted_at FROM invoices WHERE id = ?").get(ids[0])).toEqual({
       deleted_at: null,
     });
+  });
+});
+
+// The app hides what a user may not do from `access`, so it must say exactly
+// what the guards above enforce, no more and no less.
+describe("the access map the app is given", () => {
+  test("matches requirePermission for every role, resource and action", async () => {
+    const users = [
+      { id: "accountant-1", bearer: token.accountant },
+      { id: "viewer-1", bearer: token.viewer },
+      { id: "nobody-1", bearer: token.nobody },
+      { id: "legacy-1", bearer: token.legacy },
+    ];
+    for (const user of users) {
+      const me = (await (await call(user.bearer, "GET", "/api/v1/auth/me")).json()) as {
+        data: { access: Record<string, string[]> };
+      };
+      for (const resource of RESOURCES) {
+        for (const action of ALL_ACTIONS) {
+          const enforced = hasPermission(
+            { sub: user.id, username: user.id, is_admin: false, v: 1, exp: 0 },
+            resource,
+            action,
+          );
+          expect({
+            user: user.id,
+            resource,
+            action,
+            allowed: me.data.access[resource].includes(action),
+          }).toEqual({ user: user.id, resource, action, allowed: enforced });
+        }
+      }
+    }
+  });
+
+  test("a Viewer is told it may only read, from the moment it signs in", async () => {
+    getDb().run(
+      "INSERT INTO users (id, username, password_hash, is_admin, is_active, role) VALUES ('viewer-2', 'viewer-2', ?, 0, 1, 'Viewer')",
+      [await hashPassword("viewer-two-password")],
+    );
+    const res = await app.request("/api/v1/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username: "viewer-2", password: "viewer-two-password" }),
+    });
+    const { data } = (await res.json()) as { data: { user: { access: Record<string, string[]> } } };
+    expect(data.user.access.invoices).toEqual(["read", "export"]);
+    expect(data.user.access.templates).toEqual(["read"]);
+    expect(data.user.access.users).toEqual([]);
+  });
+
+  test("an admin may do everything", async () => {
+    const me = (await (await call(token.admin, "GET", "/api/v1/auth/me")).json()) as {
+      data: { access: Record<string, string[]> };
+    };
+    for (const resource of RESOURCES) expect(me.data.access[resource]).toEqual(ALL_ACTIONS);
   });
 });

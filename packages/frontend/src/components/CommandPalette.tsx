@@ -26,6 +26,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import {
   getRecentlyViewed,
@@ -150,14 +151,16 @@ export function CommandPalette() {
     [t, isAdmin],
   );
 
+  const can = useCan();
   const createItems = useMemo(
-    () => [
-      { icon: FileText, label: t("invoices.new_invoice"), to: "/invoices/new" },
-      { icon: ClipboardList, label: t("quotes.new_quote"), to: "/quotes/new" },
-      { icon: Users, label: t("customers.add_customer"), to: "/customers/new" },
-      { icon: Package, label: t("products.add_product"), to: "/products/new" },
-    ],
-    [t],
+    () =>
+      [
+        { icon: FileText, label: t("invoices.new_invoice"), to: "/invoices/new", can: "invoices" },
+        { icon: ClipboardList, label: t("quotes.new_quote"), to: "/quotes/new", can: "invoices" },
+        { icon: Users, label: t("customers.add_customer"), to: "/customers/new", can: "customers" },
+        { icon: Package, label: t("products.add_product"), to: "/products/new", can: "products" },
+      ].filter((item) => can(item.can as "invoices" | "customers" | "products", "create")),
+    [t, can],
   );
 
   const recentToPath = (entry: RecentEntity): string => {
@@ -290,20 +293,24 @@ export function CommandPalette() {
             </>
           )}
 
-          <CommandGroup heading={t("command.create_new")}>
-            {createItems.map((item) => (
-              <CommandItem
-                key={item.to}
-                value={`create ${item.label}`}
-                onSelect={() => go(item.to)}
-              >
-                <Plus />
-                <span>{item.label}</span>
-              </CommandItem>
-            ))}
-          </CommandGroup>
+          {createItems.length > 0 && (
+            <>
+              <CommandGroup heading={t("command.create_new")}>
+                {createItems.map((item) => (
+                  <CommandItem
+                    key={item.to}
+                    value={`create ${item.label}`}
+                    onSelect={() => go(item.to)}
+                  >
+                    <Plus />
+                    <span>{item.label}</span>
+                  </CommandItem>
+                ))}
+              </CommandGroup>
 
-          <CommandSeparator />
+              <CommandSeparator />
+            </>
+          )}
 
           <CommandGroup heading={t("command.navigate")}>
             {navItems.map((item) => (

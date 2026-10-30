@@ -14,6 +14,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -43,6 +44,9 @@ interface InboxItem {
 
 export default function Einvoices() {
   const { t } = useTranslation();
+  // The inbox is covered by the invoices permission.
+  const can = useCan();
+  const canEdit = can("invoices", "update");
   const [tab, setTab] = useState<Status | "all">("all");
   const [items, setItems] = useState<InboxItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,14 +133,16 @@ export default function Einvoices() {
             className="hidden"
             onChange={(e) => e.target.files?.[0] && upload(e.target.files[0])}
           />
-          <Button size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
-            {uploading ? (
-              <Loader2 className="h-4 w-4 animate-spin" />
-            ) : (
-              <Upload className="h-4 w-4" />
-            )}
-            {t("einvoice.import")}
-          </Button>
+          {can("invoices", "create") && (
+            <Button size="sm" onClick={() => fileRef.current?.click()} disabled={uploading}>
+              {uploading ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Upload className="h-4 w-4" />
+              )}
+              {t("einvoice.import")}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -252,17 +258,19 @@ export default function Einvoices() {
                         >
                           <Download className="h-3.5 w-3.5" />
                         </a>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7"
-                          title={t("einvoice.link_customer")}
-                          onClick={() => link(item)}
-                          disabled={linkingId === item.id}
-                        >
-                          <UserRound className="h-3.5 w-3.5" />
-                        </Button>
-                        {item.status === "archived" ? (
+                        {canEdit && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-7 w-7"
+                            title={t("einvoice.link_customer")}
+                            onClick={() => link(item)}
+                            disabled={linkingId === item.id}
+                          >
+                            <UserRound className="h-3.5 w-3.5" />
+                          </Button>
+                        )}
+                        {!canEdit ? null : item.status === "archived" ? (
                           <Button
                             variant="ghost"
                             size="icon"
@@ -283,7 +291,7 @@ export default function Einvoices() {
                             <Archive className="h-3.5 w-3.5" />
                           </Button>
                         )}
-                        {item.status === "inbox" && (
+                        {item.status === "inbox" && canEdit && (
                           <Button
                             variant="ghost"
                             size="sm"

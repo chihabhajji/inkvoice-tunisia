@@ -7,7 +7,26 @@ import type { Action, Resource } from "../types/user";
 export type Role = "Owner" | "Admin" | "Accountant" | "Viewer";
 export const ROLES: Role[] = ["Owner", "Admin", "Accountant", "Viewer"];
 
-const ALL_ACTIONS: Action[] = ["read", "create", "update", "delete", "publish", "void", "export"];
+export const ALL_ACTIONS: Action[] = [
+  "read",
+  "create",
+  "update",
+  "delete",
+  "publish",
+  "void",
+  "export",
+];
+
+export const RESOURCES: Resource[] = [
+  "invoices",
+  "customers",
+  "products",
+  "expenses",
+  "templates",
+  "settings",
+  "tax_definitions",
+  "users",
+];
 
 const READ_ACTIONS: Action[] = ["read", "export"];
 

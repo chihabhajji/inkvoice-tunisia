@@ -157,7 +157,16 @@ describe("POST /api/v1/auth/device-sessions", () => {
     const { impersonation: _ignored, ...meUser } = me.data;
     expect(body.data.user).toEqual(meUser);
     expect(Object.keys(body.data.user).sort()).toEqual(
-      ["id", "username", "email", "display_name", "is_admin", "role", "permissions"].sort(),
+      [
+        "id",
+        "username",
+        "email",
+        "display_name",
+        "is_admin",
+        "role",
+        "permissions",
+        "access",
+      ].sort(),
     );
   });
 

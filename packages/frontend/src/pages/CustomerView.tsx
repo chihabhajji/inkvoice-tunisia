@@ -18,6 +18,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { STATUS_COLORS } from "@/lib/constants";
 import { formatApiError } from "@/lib/format-api-error";
@@ -30,6 +31,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
  */
 export default function CustomerView() {
   const { t } = useTranslation();
+  const canEdit = useCan()("customers", "update");
   const { id } = useParams();
   const navigate = useNavigate();
   const [customer, setCustomer] = useState<any | null>(null);
@@ -118,10 +120,12 @@ export default function CustomerView() {
             <Receipt className="h-4 w-4" />
             {t("customers.statement")}
           </Button>
-          <Button size="sm" onClick={() => navigate(`/customers/${id}/edit`)}>
-            <Pencil className="h-4 w-4" />
-            {t("common.edit")}
-          </Button>
+          {canEdit && (
+            <Button size="sm" onClick={() => navigate(`/customers/${id}/edit`)}>
+              <Pencil className="h-4 w-4" />
+              {t("common.edit")}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -172,7 +176,7 @@ export default function CustomerView() {
             <CardContent>
               <PaymentMethodList
                 methods={paymentMethods}
-                onRemove={(methodId) => setRemovingMethodId(methodId)}
+                onRemove={canEdit ? (methodId) => setRemovingMethodId(methodId) : undefined}
               />
             </CardContent>
           </Card>

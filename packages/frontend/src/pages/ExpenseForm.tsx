@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
+import { useCan } from "@/hooks/use-can";
 import { isPositive, maxLength, required, useFormValidation } from "@/hooks/use-form-validation";
 import { useTranslation } from "@/i18n";
 import { toLocalIsoDate } from "@/lib/date";
@@ -48,6 +49,9 @@ export default function ExpenseForm({ onSave }: Props) {
   );
   const autoFetchRates = useSettingsStore((s) => s.settings.exchange_rate_auto_fetch === "true");
   const isEdit = !!id && id !== "new";
+  const can = useCan();
+  // Without update rights the expense opens read-only: same page, no saving.
+  const readOnly = isEdit && !can("expenses", "update");
   const [loading, setLoading] = useState(false);
   const [rebilling, setRebilling] = useState(false);
   const [taxDefs, setTaxDefs] = useState<any[]>([]);
@@ -168,7 +172,14 @@ export default function ExpenseForm({ onSave }: Props) {
     }
   };
 
-  const canRebill = isEdit && !!form.is_billable && !!form.customer_id && !billedInvoiceId;
+  // Rebilling updates the expense and writes an invoice, so it needs both.
+  const canRebill =
+    isEdit &&
+    !readOnly &&
+    can("invoices", "create") &&
+    !!form.is_billable &&
+    !!form.customer_id &&
+    !billedInvoiceId;
 
   return (
     <form onSubmit={handleSubmit} className="max-w-2xl space-y-6" noValidate>
@@ -186,126 +197,135 @@ export default function ExpenseForm({ onSave }: Props) {
             ]}
           />
           <h1 className="text-2xl font-semibold tracking-tight mt-2">
-            {isEdit ? t("expenses.edit_expense") : t("expenses.new_expense")}
+            {readOnly
+              ? form.vendor || t("expenses.expense_info")
+              : isEdit
+                ? t("expenses.edit_expense")
+                : t("expenses.new_expense")}
           </h1>
         </div>
         <div className="flex gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => navigate("/expenses")}>
-            {t("common.cancel")}
+            {readOnly ? t("common.back") : t("common.cancel")}
           </Button>
-          <Button type="submit" size="sm" disabled={loading}>
-            <Save className="h-4 w-4" />
-            {loading ? t("common.saving") : t("common.save")}
-          </Button>
+          {!readOnly && (
+            <Button type="submit" size="sm" disabled={loading}>
+              <Save className="h-4 w-4" />
+              {loading ? t("common.saving") : t("common.save")}
+            </Button>
+          )}
         </div>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("expenses.expense_info")}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <FormField label={t("expenses.vendor")} error={getError("vendor")}>
+      <fieldset disabled={readOnly} className="min-w-0 space-y-6">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">{t("expenses.expense_info")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <FormField label={t("expenses.vendor")} error={getError("vendor")}>
+                <Input
+                  value={form.vendor}
+                  onChange={(e) => setField("vendor", e.target.value)}
+                  onBlur={() => onBlur("vendor", form)}
+                  aria-invalid={!!getError("vendor")}
+                />
+              </FormField>
+              <FormField label={t("expenses.date")} error={getError("expense_date")} required>
+                <Input
+                  type="date"
+                  value={form.expense_date}
+                  onChange={(e) => setField("expense_date", e.target.value)}
+                  onBlur={() => onBlur("expense_date", form)}
+                  aria-invalid={!!getError("expense_date")}
+                />
+              </FormField>
+            </div>
+
+            <FormField label={t("expenses.description")}>
+              <Textarea
+                value={form.description}
+                onChange={(e) => setField("description", e.target.value)}
+                rows={2}
+              />
+            </FormField>
+
+            <FormField label={t("expenses.category")}>
               <Input
-                value={form.vendor}
-                onChange={(e) => setField("vendor", e.target.value)}
-                onBlur={() => onBlur("vendor", form)}
-                aria-invalid={!!getError("vendor")}
+                list="expense-category-options"
+                value={form.category}
+                onChange={(e) => setField("category", e.target.value)}
+                placeholder={t("expenses.category_placeholder")}
               />
-            </FormField>
-            <FormField label={t("expenses.date")} error={getError("expense_date")} required>
-              <Input
-                type="date"
-                value={form.expense_date}
-                onChange={(e) => setField("expense_date", e.target.value)}
-                onBlur={() => onBlur("expense_date", form)}
-                aria-invalid={!!getError("expense_date")}
-              />
-            </FormField>
-          </div>
-
-          <FormField label={t("expenses.description")}>
-            <Textarea
-              value={form.description}
-              onChange={(e) => setField("description", e.target.value)}
-              rows={2}
-            />
-          </FormField>
-
-          <FormField label={t("expenses.category")}>
-            <Input
-              list="expense-category-options"
-              value={form.category}
-              onChange={(e) => setField("category", e.target.value)}
-              placeholder={t("expenses.category_placeholder")}
-            />
-            <datalist id="expense-category-options">
-              {DEFAULT_CATEGORIES.map((cat) => (
-                <option key={cat} value={cat} />
-              ))}
-            </datalist>
-          </FormField>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">{t("expenses.amount_info")}</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="grid grid-cols-3 gap-4">
-            <FormField label={t("expenses.amount")} error={getError("amount")} required>
-              <NumberInput
-                value={form.amount}
-                min={0}
-                decimals={moneyDecimals(form.currency)}
-                onValueChange={(v) => {
-                  const newForm = { ...form, amount: v };
-                  setForm(newForm);
-                  onChange("amount" as any, newForm as any);
-                  onBlur("amount", newForm);
-                }}
-                aria-invalid={!!getError("amount")}
-              />
-            </FormField>
-            <FormField label={t("expenses.tax")}>
-              <select
-                value={form.tax_id}
-                onChange={(e) => setField("tax_id", e.target.value)}
-                className="form-select"
-              >
-                <option value="">{t("expenses.no_tax")}</option>
-                {taxDefs.map((td: any) => (
-                  <option key={td.id} value={td.id}>
-                    {td.name} ({td.rate}%)
-                  </option>
+              <datalist id="expense-category-options">
+                {DEFAULT_CATEGORIES.map((cat) => (
+                  <option key={cat} value={cat} />
                 ))}
-              </select>
+              </datalist>
             </FormField>
-            <FormField label={t("invoices.currency")}>
-              <CurrencyCombobox value={form.currency} onChange={handleCurrencyChange} />
-            </FormField>
-          </div>
+          </CardContent>
+        </Card>
 
-          <ExchangeRateField
-            fromCurrency={form.currency}
-            baseCurrency={baseCurrency}
-            rate={form.exchange_rate}
-            onChange={(rate) => setForm((f) => ({ ...f, exchange_rate: rate }))}
-            amount={form.amount}
-          />
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-sm">{t("expenses.amount_info")}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-3 gap-4">
+              <FormField label={t("expenses.amount")} error={getError("amount")} required>
+                <NumberInput
+                  value={form.amount}
+                  min={0}
+                  decimals={moneyDecimals(form.currency)}
+                  onValueChange={(v) => {
+                    const newForm = { ...form, amount: v };
+                    setForm(newForm);
+                    onChange("amount" as any, newForm as any);
+                    onBlur("amount", newForm);
+                  }}
+                  aria-invalid={!!getError("amount")}
+                />
+              </FormField>
+              <FormField label={t("expenses.tax")}>
+                <select
+                  value={form.tax_id}
+                  onChange={(e) => setField("tax_id", e.target.value)}
+                  className="form-select"
+                >
+                  <option value="">{t("expenses.no_tax")}</option>
+                  {taxDefs.map((td: any) => (
+                    <option key={td.id} value={td.id}>
+                      {td.name} ({td.rate}%)
+                    </option>
+                  ))}
+                </select>
+              </FormField>
+              <FormField label={t("invoices.currency")}>
+                <CurrencyCombobox value={form.currency} onChange={handleCurrencyChange} />
+              </FormField>
+            </div>
 
-          <FormField label={t("expenses.receipt_reference")}>
-            <Input
-              value={form.receipt_reference}
-              onChange={(e) => setField("receipt_reference", e.target.value)}
-              placeholder={t("expenses.receipt_placeholder")}
+            <ExchangeRateField
+              fromCurrency={form.currency}
+              baseCurrency={baseCurrency}
+              rate={form.exchange_rate}
+              onChange={(rate) => setForm((f) => ({ ...f, exchange_rate: rate }))}
+              amount={form.amount}
             />
-          </FormField>
-        </CardContent>
-      </Card>
 
+            <FormField label={t("expenses.receipt_reference")}>
+              <Input
+                value={form.receipt_reference}
+                onChange={(e) => setField("receipt_reference", e.target.value)}
+                placeholder={t("expenses.receipt_placeholder")}
+              />
+            </FormField>
+          </CardContent>
+        </Card>
+      </fieldset>
+
+      {/* Not in the fieldset: "View invoice" must stay usable when read-only. */}
       <Card>
         <CardHeader>
           <CardTitle className="text-sm">{t("expenses.billing")}</CardTitle>
@@ -316,6 +336,7 @@ export default function ExpenseForm({ onSave }: Props) {
               value={form.customer_id}
               onChange={(e) => setField("customer_id", e.target.value)}
               className="form-select"
+              disabled={readOnly}
             >
               <option value="">{t("expenses.no_customer")}</option>
               {customers.map((cust: any) => (
@@ -333,6 +354,7 @@ export default function ExpenseForm({ onSave }: Props) {
               checked={!!form.is_billable}
               onChange={(e) => setField("is_billable", e.target.checked ? 1 : 0)}
               className="rounded"
+              disabled={readOnly}
             />
             <Label htmlFor="is_billable" className="text-sm font-normal">
               {t("expenses.is_billable")}
@@ -366,6 +388,7 @@ export default function ExpenseForm({ onSave }: Props) {
               value={form.notes}
               onChange={(e) => setField("notes", e.target.value)}
               rows={2}
+              disabled={readOnly}
             />
           </FormField>
         </CardContent>

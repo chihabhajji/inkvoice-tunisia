@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
+import { useCan } from "@/hooks/use-can";
 import { useNewEntityShortcut } from "@/hooks/use-new-entity-shortcut";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
@@ -48,6 +49,10 @@ export default function Customers() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams();
+  const can = useCan();
+  const canCreate = can("customers", "create");
+  const canEdit = can("customers", "update");
+  const canDelete = can("customers", "delete");
   const isForm =
     location.pathname.includes("/new") || (id && location.pathname.includes("/customers/"));
 
@@ -80,7 +85,7 @@ export default function Customers() {
     }
   }, [isForm]);
 
-  useNewEntityShortcut(() => navigate("/customers/new"), !isForm);
+  useNewEntityShortcut(() => navigate("/customers/new"), canCreate && !isForm);
 
   const customerColumns = [
     { key: "name", label: t("customers.name"), required: true },
@@ -89,7 +94,10 @@ export default function Customers() {
     { key: "invoice_count", label: t("nav.invoices") },
   ];
   const { isVisible: isColVisible } = useColumnVisibility("inkvoice-cols-customers");
-  const visibleColCount = 1 + customerColumns.filter((c) => isColVisible(c.key)).length + 1; // checkbox + actions
+  const visibleColCount =
+    (canDelete ? 1 : 0) + // checkbox (batch delete is the only batch action)
+    customerColumns.filter((c) => isColVisible(c.key)).length +
+    (canEdit || canDelete ? 1 : 0); // actions
 
   if (isForm) {
     return (
@@ -168,26 +176,32 @@ export default function Customers() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{t("customers.title")}</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="h-4 w-4 mr-2" /> {t("import.import_button")}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              const params: Record<string, string> = {};
-              if (search) params.search = search;
-              if (tags.length > 0) params.tags = tags.join(",");
-              window.open(api.exportCsvUrl("customers", params), "_blank");
-            }}
-          >
-            <Download className="h-4 w-4 mr-2" /> {t("common.export_csv")}
-          </Button>
-          <Button
-            onClick={() => navigate("/customers/new")}
-            title={`${t("customers.add_customer")} (N)`}
-          >
-            <Plus className="h-4 w-4 mr-2" /> {t("customers.add_customer")}
-          </Button>
+          {canCreate && (
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="h-4 w-4 mr-2" /> {t("import.import_button")}
+            </Button>
+          )}
+          {can("customers", "export") && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const params: Record<string, string> = {};
+                if (search) params.search = search;
+                if (tags.length > 0) params.tags = tags.join(",");
+                window.open(api.exportCsvUrl("customers", params), "_blank");
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" /> {t("common.export_csv")}
+            </Button>
+          )}
+          {canCreate && (
+            <Button
+              onClick={() => navigate("/customers/new")}
+              title={`${t("customers.add_customer")} (N)`}
+            >
+              <Plus className="h-4 w-4 mr-2" /> {t("customers.add_customer")}
+            </Button>
+          )}
           <ColumnVisibilityMenu storageKey="inkvoice-cols-customers" columns={customerColumns} />
         </div>
       </div>
@@ -229,13 +243,15 @@ export default function Customers() {
         <Table stickyFirstColumn>
           <TableHeader>
             <TableRow>
-              <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
-                <Checkbox
-                  checked={allSelected}
-                  indeterminate={someSelected && !allSelected}
-                  onCheckedChange={toggleAll}
-                />
-              </TableCell>
+              {canDelete && (
+                <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={allSelected}
+                    indeterminate={someSelected && !allSelected}
+                    onCheckedChange={toggleAll}
+                  />
+                </TableCell>
+              )}
               {isColVisible("name") && (
                 <SortableColumnHeader
                   label={t("customers.name")}
@@ -269,9 +285,11 @@ export default function Customers() {
                   className="text-right"
                 />
               )}
-              <TableCell className="w-[100px] font-medium text-sm text-muted-foreground">
-                {t("common.actions")}
-              </TableCell>
+              {(canEdit || canDelete) && (
+                <TableCell className="w-[100px] font-medium text-sm text-muted-foreground">
+                  {t("common.actions")}
+                </TableCell>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -283,7 +301,7 @@ export default function Customers() {
                     title={t("customers.empty_title")}
                     description={t("customers.empty_description")}
                     actionLabel={t("customers.add_customer")}
-                    onAction={() => navigate("/customers/new")}
+                    onAction={canCreate ? () => navigate("/customers/new") : undefined}
                   />
                 </TableCell>
               </TableRow>
@@ -297,12 +315,14 @@ export default function Customers() {
                 )}
                 onClick={() => navigate(`/customers/${c.id}`)}
               >
-                <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selected.has(c.id)}
-                    onCheckedChange={() => toggleSelect(c.id)}
-                  />
-                </TableCell>
+                {canDelete && (
+                  <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selected.has(c.id)}
+                      onCheckedChange={() => toggleSelect(c.id)}
+                    />
+                  </TableCell>
+                )}
                 {isColVisible("name") && <TableCell className="font-medium">{c.name}</TableCell>}
                 {isColVisible("email") && (
                   <TableCell className="text-muted-foreground">{c.email || "-"}</TableCell>
@@ -331,26 +351,32 @@ export default function Customers() {
                     )}
                   </TableCell>
                 )}
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <div className="flex gap-1">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("common.edit")}
-                      onClick={() => navigate(`/customers/${c.id}/edit`)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("common.delete")}
-                      onClick={() => setDeleteConfirm({ open: true, id: c.id })}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
+                {(canEdit || canDelete) && (
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <div className="flex gap-1">
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("common.edit")}
+                          onClick={() => navigate(`/customers/${c.id}/edit`)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("common.delete")}
+                          onClick={() => setDeleteConfirm({ open: true, id: c.id })}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>

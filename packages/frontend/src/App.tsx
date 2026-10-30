@@ -5,6 +5,7 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { PublicLayout } from "@/components/layout/PublicLayout";
 import { ErrorBoundary } from "@/components/shared/ErrorBoundary";
 import { Toaster } from "@/components/ui/sonner";
+import { type Action, type Resource, useCan } from "@/hooks/use-can";
 import Login from "@/pages/Login";
 import { getRoutes } from "@/route-registry";
 import { useAuthStore } from "@/stores/auth.store";
@@ -96,6 +97,26 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   return <>{children}</>;
 }
 
+/** A create or edit form the user's role could never save goes back one level,
+ *  to the record or the list, instead of opening. */
+function RequirePermission({
+  resource,
+  action,
+  children,
+}: {
+  resource: Resource;
+  action: Action;
+  children: React.ReactNode;
+}) {
+  const can = useCan();
+
+  if (!can(resource, action)) {
+    return <Navigate to=".." relative="path" replace />;
+  }
+
+  return <>{children}</>;
+}
+
 function NotFound() {
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-4">
@@ -171,28 +192,98 @@ function App() {
             >
               <Route path="/" element={<Dashboard />} />
               <Route path="/invoices" element={<Navigate to="/invoices/all" replace />} />
-              <Route path="/invoices/new" element={<Invoices />} />
-              <Route path="/invoices/:id/edit" element={<Invoices />} />
+              <Route
+                path="/invoices/new"
+                element={
+                  <RequirePermission resource="invoices" action="create">
+                    <Invoices />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/invoices/:id/edit"
+                element={
+                  <RequirePermission resource="invoices" action="update">
+                    <Invoices />
+                  </RequirePermission>
+                }
+              />
               <Route path="/invoices/:id" element={<Invoices />} />
               <Route path="/quotes" element={<Navigate to="/quotes/all" replace />} />
-              <Route path="/quotes/new" element={<QuoteForm />} />
-              <Route path="/quotes/:id/edit" element={<QuoteForm />} />
+              <Route
+                path="/quotes/new"
+                element={
+                  <RequirePermission resource="invoices" action="create">
+                    <QuoteForm />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/quotes/:id/edit"
+                element={
+                  <RequirePermission resource="invoices" action="update">
+                    <QuoteForm />
+                  </RequirePermission>
+                }
+              />
               <Route path="/quotes/:id" element={<QuoteRoute />} />
               <Route path="/recurring" element={<Navigate to="/recurring/all" replace />} />
-              <Route path="/recurring/new" element={<RecurringInvoiceForm />} />
-              <Route path="/recurring/:id/edit" element={<RecurringInvoiceForm />} />
+              <Route
+                path="/recurring/new"
+                element={
+                  <RequirePermission resource="invoices" action="create">
+                    <RecurringInvoiceForm />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/recurring/:id/edit"
+                element={
+                  <RequirePermission resource="invoices" action="update">
+                    <RecurringInvoiceForm />
+                  </RequirePermission>
+                }
+              />
               <Route path="/recurring/:tab" element={<RecurringInvoices />} />
               <Route path="/reports" element={<Navigate to="/reports/tax-summary" replace />} />
               <Route path="/reports/:tab" element={<Reports />} />
               <Route path="/customers" element={<Customers />} />
-              <Route path="/customers/new" element={<Customers />} />
-              <Route path="/customers/:id/edit" element={<Customers />} />
+              <Route
+                path="/customers/new"
+                element={
+                  <RequirePermission resource="customers" action="create">
+                    <Customers />
+                  </RequirePermission>
+                }
+              />
+              <Route
+                path="/customers/:id/edit"
+                element={
+                  <RequirePermission resource="customers" action="update">
+                    <Customers />
+                  </RequirePermission>
+                }
+              />
               <Route path="/customers/:id" element={<CustomerView />} />
               <Route path="/products" element={<Navigate to="/products/all" replace />} />
-              <Route path="/products/new" element={<Products />} />
+              <Route
+                path="/products/new"
+                element={
+                  <RequirePermission resource="products" action="create">
+                    <Products />
+                  </RequirePermission>
+                }
+              />
               <Route path="/products/:id" element={<Products />} />
               <Route path="/expenses" element={<Expenses />} />
-              <Route path="/expenses/new" element={<Expenses />} />
+              <Route
+                path="/expenses/new"
+                element={
+                  <RequirePermission resource="expenses" action="create">
+                    <Expenses />
+                  </RequirePermission>
+                }
+              />
               <Route path="/expenses/:id" element={<Expenses />} />
               <Route
                 path="/einvoices"

@@ -5,6 +5,7 @@ import { api } from "@/api/client";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
 import { formatDate } from "@/lib/utils";
@@ -47,6 +48,8 @@ const STATUS_STYLES: Record<Transmission["status"], string> = {
 
 function TransmissionPanel({ invoiceId }: Props) {
   const { t } = useTranslation();
+  // Sending, retrying and cancelling all hand the invoice to the network.
+  const canSend = useCan()("invoices", "publish");
   const settings = useSettingsStore((s) => s.settings);
   const networkLabel = settings.peppol_enabled === "true" ? "PEPPOL" : "France (Qonto)";
   const [transmissions, setTransmissions] = useState<Transmission[]>([]);
@@ -119,14 +122,16 @@ function TransmissionPanel({ invoiceId }: Props) {
           <Button variant="outline" size="sm" onClick={load} disabled={loading}>
             <RefreshCw className="h-3.5 w-3.5" />
           </Button>
-          <Button size="sm" onClick={transmit} disabled={sending}>
-            {sending ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
-            ) : (
-              <Send className="h-3.5 w-3.5" />
-            )}
-            {t("peppol.send_via_network", { network: networkLabel })}
-          </Button>
+          {canSend && (
+            <Button size="sm" onClick={transmit} disabled={sending}>
+              {sending ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+              {t("peppol.send_via_network", { network: networkLabel })}
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
@@ -160,7 +165,7 @@ function TransmissionPanel({ invoiceId }: Props) {
                   <span className="text-xs text-muted-foreground">
                     {t("peppol.attempts", { count: String(tr.attempt_count) })}
                   </span>
-                  {tr.status === "failed" && (
+                  {tr.status === "failed" && canSend && (
                     <Button
                       variant="outline"
                       size="sm"
@@ -176,7 +181,7 @@ function TransmissionPanel({ invoiceId }: Props) {
                       {t("peppol.retry")}
                     </Button>
                   )}
-                  {tr.status === "queued" && (
+                  {tr.status === "queued" && canSend && (
                     <Button
                       variant="ghost"
                       size="sm"

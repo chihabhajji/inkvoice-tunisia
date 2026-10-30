@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCan } from "@/hooks/use-can";
 import { useNewEntityShortcut } from "@/hooks/use-new-entity-shortcut";
 import { useTranslation } from "@/i18n";
 import { consumeRowHighlight } from "@/lib/highlight-row";
@@ -75,15 +76,19 @@ export default function Quotes() {
 
   const totalPages = Math.ceil(total / 20);
 
-  useNewEntityShortcut(() => navigate("/quotes/new"));
+  // Quotes are covered by the invoices permission.
+  const canCreate = useCan()("invoices", "create");
+  useNewEntityShortcut(() => navigate("/quotes/new"), canCreate);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{t("quotes.title")}</h1>
-        <Button onClick={() => navigate("/quotes/new")} title={`${t("quotes.new_quote")} (N)`}>
-          <Plus className="h-4 w-4 mr-2" /> {t("quotes.new_quote")}
-        </Button>
+        {canCreate && (
+          <Button onClick={() => navigate("/quotes/new")} title={`${t("quotes.new_quote")} (N)`}>
+            <Plus className="h-4 w-4 mr-2" /> {t("quotes.new_quote")}
+          </Button>
+        )}
       </div>
 
       <div className="flex flex-col sm:flex-row gap-4">
@@ -154,7 +159,7 @@ export default function Quotes() {
                     title={t("quotes.empty_title")}
                     description={t("quotes.empty_description")}
                     actionLabel={t("quotes.new_quote")}
-                    onAction={() => navigate("/quotes/new")}
+                    onAction={canCreate ? () => navigate("/quotes/new") : undefined}
                   />
                 </TableCell>
               </TableRow>

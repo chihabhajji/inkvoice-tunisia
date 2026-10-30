@@ -1,7 +1,8 @@
 import { getDb } from "../database/connection";
-import type { User } from "../types/user";
+import type { Action, Resource, User } from "../types/user";
 import { signToken } from "../utils/jwt";
 import { verifyPassword } from "../utils/password";
+import { ALL_ACTIONS, RESOURCES, roleAllows } from "../utils/permissions";
 
 /**
  * The shared password check behind every sign-in path (web login and mobile
@@ -38,17 +39,11 @@ export async function login(username: string, password: string, tenantId?: strin
     tenant_id: tenantId,
   });
 
-  return {
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      display_name: user.display_name,
-      is_admin: !!user.is_admin,
-      role: user.role ?? null,
-    },
-  };
+  // The same shape as GET /auth/me, so the app knows what to offer from the
+  // first screen on.
+  const current = getCurrentUser(user.id);
+  if (!current) return null;
+  return { token, user: current };
 }
 
 export function getCurrentUser(userId: string) {
@@ -65,5 +60,29 @@ export function getCurrentUser(userId: string) {
     .query("SELECT resource, action FROM user_permissions WHERE user_id = ?")
     .all(userId) as { resource: string; action: string }[];
 
-  return { ...user, is_admin: !!user.is_admin, permissions };
+  return {
+    ...user,
+    is_admin: !!user.is_admin,
+    permissions,
+    access: accessFor(!!user.is_admin, user.role, permissions),
+  };
+}
+
+/**
+ * What the user may do on each resource, by the rule requirePermission applies
+ * (admins anything, others their role plus any legacy grant), so a client can
+ * hide what the server would refuse. The server still checks every request.
+ */
+function accessFor(
+  isAdmin: boolean,
+  role: string | null,
+  grants: { resource: string; action: string }[],
+): Record<Resource, Action[]> {
+  const allowed = (resource: Resource, action: Action) =>
+    isAdmin ||
+    roleAllows(role, resource, action) ||
+    grants.some((g) => g.resource === resource && g.action === action);
+  return Object.fromEntries(
+    RESOURCES.map((resource) => [resource, ALL_ACTIONS.filter((a) => allowed(resource, a))]),
+  ) as Record<Resource, Action[]>;
 }

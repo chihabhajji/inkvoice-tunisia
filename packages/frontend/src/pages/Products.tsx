@@ -22,6 +22,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useCan } from "@/hooks/use-can";
 import { useNewEntityShortcut } from "@/hooks/use-new-entity-shortcut";
 import { useTranslation } from "@/i18n";
 import { formatApiError } from "@/lib/format-api-error";
@@ -50,6 +51,10 @@ export default function Products() {
   const navigate = useNavigate();
   const location = useLocation();
   const { id } = useParams<{ id?: string }>();
+  const can = useCan();
+  const canCreate = can("products", "create");
+  const canEdit = can("products", "update");
+  const canDelete = can("products", "delete");
   const isNew = location.pathname === "/products/new";
   const isForm = isNew || (!!id && isRecordId(id));
   const category = id && PRODUCT_CATEGORY_SEGMENTS.has(id) ? id : "all";
@@ -91,7 +96,7 @@ export default function Products() {
     }
   }, [id, isNew, isForm, navigate]);
 
-  useNewEntityShortcut(() => navigate("/products/new"), !isForm);
+  useNewEntityShortcut(() => navigate("/products/new"), canCreate && !isForm);
 
   const productColumns = [
     { key: "name", label: t("products.name"), required: true },
@@ -102,7 +107,10 @@ export default function Products() {
     { key: "status", label: t("products.status") },
   ];
   const { isVisible: isColVisible } = useColumnVisibility("inkvoice-cols-products");
-  const visibleColCount = 1 + productColumns.filter((c) => isColVisible(c.key)).length + 1; // checkbox + actions
+  const visibleColCount =
+    (canDelete ? 1 : 0) + // checkbox (batch delete is the only batch action)
+    productColumns.filter((c) => isColVisible(c.key)).length +
+    (canEdit || canDelete ? 1 : 0); // actions
 
   if (isForm) {
     return (
@@ -194,26 +202,32 @@ export default function Products() {
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold tracking-tight">{t("products.title")}</h1>
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => setImportOpen(true)}>
-            <Upload className="h-4 w-4 mr-2" /> {t("import.import_button")}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={() => {
-              const params: Record<string, string> = {};
-              if (search) params.search = search;
-              if (category !== "all") params.category = category;
-              window.open(api.exportCsvUrl("products", params), "_blank");
-            }}
-          >
-            <Download className="h-4 w-4 mr-2" /> {t("common.export_csv")}
-          </Button>
-          <Button
-            onClick={() => navigate("/products/new")}
-            title={`${t("products.add_product")} (N)`}
-          >
-            <Plus className="h-4 w-4 mr-2" /> {t("products.add_product")}
-          </Button>
+          {canCreate && (
+            <Button variant="outline" onClick={() => setImportOpen(true)}>
+              <Upload className="h-4 w-4 mr-2" /> {t("import.import_button")}
+            </Button>
+          )}
+          {can("products", "export") && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                const params: Record<string, string> = {};
+                if (search) params.search = search;
+                if (category !== "all") params.category = category;
+                window.open(api.exportCsvUrl("products", params), "_blank");
+              }}
+            >
+              <Download className="h-4 w-4 mr-2" /> {t("common.export_csv")}
+            </Button>
+          )}
+          {canCreate && (
+            <Button
+              onClick={() => navigate("/products/new")}
+              title={`${t("products.add_product")} (N)`}
+            >
+              <Plus className="h-4 w-4 mr-2" /> {t("products.add_product")}
+            </Button>
+          )}
           <ColumnVisibilityMenu storageKey="inkvoice-cols-products" columns={productColumns} />
         </div>
       </div>
@@ -252,13 +266,15 @@ export default function Products() {
         <Table stickyFirstColumn>
           <TableHeader>
             <TableRow>
-              <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
-                <Checkbox
-                  checked={allSelected}
-                  indeterminate={someSelected && !allSelected}
-                  onCheckedChange={toggleAll}
-                />
-              </TableCell>
+              {canDelete && (
+                <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                  <Checkbox
+                    checked={allSelected}
+                    indeterminate={someSelected && !allSelected}
+                    onCheckedChange={toggleAll}
+                  />
+                </TableCell>
+              )}
               {isColVisible("name") && (
                 <SortableColumnHeader
                   label={t("products.name")}
@@ -308,9 +324,11 @@ export default function Products() {
                   onSort={handleSort}
                 />
               )}
-              <TableCell className="w-[100px] font-medium text-sm text-muted-foreground">
-                {t("common.actions")}
-              </TableCell>
+              {(canEdit || canDelete) && (
+                <TableCell className="w-[100px] font-medium text-sm text-muted-foreground">
+                  {t("common.actions")}
+                </TableCell>
+              )}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -322,7 +340,7 @@ export default function Products() {
                     title={t("products.empty_title")}
                     description={t("products.empty_description")}
                     actionLabel={t("products.add_product")}
-                    onAction={() => navigate("/products/new")}
+                    onAction={canCreate ? () => navigate("/products/new") : undefined}
                   />
                 </TableCell>
               </TableRow>
@@ -336,12 +354,14 @@ export default function Products() {
                 )}
                 onClick={() => navigate(`/products/${p.id}`)}
               >
-                <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
-                  <Checkbox
-                    checked={selected.has(p.id)}
-                    onCheckedChange={() => toggleSelect(p.id)}
-                  />
-                </TableCell>
+                {canDelete && (
+                  <TableCell className="w-10" onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selected.has(p.id)}
+                      onCheckedChange={() => toggleSelect(p.id)}
+                    />
+                  </TableCell>
+                )}
                 {isColVisible("name") && <TableCell className="font-medium">{p.name}</TableCell>}
                 {isColVisible("sku") && (
                   <TableCell className="text-muted-foreground">{p.sku || "-"}</TableCell>
@@ -375,36 +395,42 @@ export default function Products() {
                     </Badge>
                   </TableCell>
                 )}
-                <TableCell onClick={(e) => e.stopPropagation()}>
-                  <div className="flex gap-1">
-                    {!p.is_active && (
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label={t("products.reactivate")}
-                        onClick={() => handleReactivate(p.id)}
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </Button>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("common.edit")}
-                      onClick={() => navigate(`/products/${p.id}`)}
-                    >
-                      <Pencil className="h-4 w-4" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={t("common.delete")}
-                      onClick={() => setDeleteConfirm({ open: true, id: p.id })}
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                </TableCell>
+                {(canEdit || canDelete) && (
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <div className="flex gap-1">
+                      {!p.is_active && canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("products.reactivate")}
+                          onClick={() => handleReactivate(p.id)}
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canEdit && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("common.edit")}
+                          onClick={() => navigate(`/products/${p.id}`)}
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </Button>
+                      )}
+                      {canDelete && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label={t("common.delete")}
+                          onClick={() => setDeleteConfirm({ open: true, id: p.id })}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      )}
+                    </div>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
