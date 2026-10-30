@@ -140,8 +140,7 @@ describe("sendInvoiceEmail", () => {
 
   test("404s on a missing invoice", async () => {
     const result = await sendInvoiceEmail("nope");
-    expect(result.success).toBe(false);
-    if (!result.success) expect(result.status).toBe(404);
+    expect(result).toEqual({ success: false, error: "Invoice not found", status: 404 });
   });
 
   test("400s when the customer has no email and none is supplied", async () => {
@@ -154,7 +153,6 @@ describe("sendInvoiceEmail", () => {
       items: [{ description: "Work", quantity: 1, unit_price: 10 }],
     });
     const result = await sendInvoiceEmail(inv.id);
-    expect(result.success).toBe(false);
-    if (!result.success) expect(result.status).toBe(400);
+    expect(result).toEqual({ success: false, error: "No recipient email address", status: 400 });
   });
 });

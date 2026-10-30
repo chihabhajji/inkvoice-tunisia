@@ -813,7 +813,7 @@ describe("attemptAutoBill", () => {
     const inv = sentInvoiceFor(bare, 42);
 
     const emailCalls: string[] = [];
-    const realSend = await import("../services/invoice-send.service");
+    const realSend = { ...(await import("../services/invoice-send.service")) };
     mock.module("../services/invoice-send.service", () => ({
       ...realSend,
       sendInvoiceEmail: async (invoiceId: string) => {
@@ -846,7 +846,7 @@ describe("attemptAutoBill", () => {
 
   test("no_balance_due and invoice_status_* skips stay silent, unlike no_saved_method", async () => {
     const emailCalls: string[] = [];
-    const realSend = await import("../services/invoice-send.service");
+    const realSend = { ...(await import("../services/invoice-send.service")) };
     mock.module("../services/invoice-send.service", () => ({
       ...realSend,
       sendInvoiceEmail: async (invoiceId: string) => {
@@ -922,7 +922,7 @@ describe("attemptAutoBill", () => {
         }) as any,
     );
 
-    const realSend = await import("../services/invoice-send.service");
+    const realSend = { ...(await import("../services/invoice-send.service")) };
     mock.module("../services/invoice-send.service", () => ({
       ...realSend,
       sendInvoiceEmail: async () => ({
@@ -932,7 +932,7 @@ describe("attemptAutoBill", () => {
       }),
     }));
 
-    const realEmail = await import("../services/email.service");
+    const realEmail = { ...(await import("../services/email.service")) };
     const adminEmails: { text: string; html: string }[] = [];
     mock.module("../services/email.service", () => ({
       ...realEmail,
