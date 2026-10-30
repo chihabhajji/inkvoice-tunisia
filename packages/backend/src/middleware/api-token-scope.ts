@@ -10,6 +10,9 @@ export const API_SCOPE_RESOURCES = [
   "quotes",
   "products",
   "expenses",
+  "banks",
+  "bank-accounts",
+  "contacts",
 ] as const;
 
 export const API_SCOPE_ACTIONS = ["read", "write"] as const;

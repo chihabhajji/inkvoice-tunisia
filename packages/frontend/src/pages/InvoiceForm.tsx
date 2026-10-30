@@ -37,6 +37,7 @@ import { NumberInput } from "@/components/ui/number-input";
 import { Textarea } from "@/components/ui/textarea";
 import { useCan } from "@/hooks/use-can";
 import { useTranslation } from "@/i18n";
+import { allBankingOptions } from "@/lib/banking-options";
 import { isInvoiceFormEditable } from "@/lib/constants";
 import { addDaysIso, todayIso } from "@/lib/date";
 import { formatApiError } from "@/lib/format-api-error";
@@ -44,6 +45,7 @@ import { markRowHighlight } from "@/lib/highlight-row";
 import { consumeInvoiceDraft, saveInvoiceDraft } from "@/lib/invoice-draft";
 import { cn, formatCurrency, moneyDecimals } from "@/lib/utils";
 import { useSettingsStore } from "@/stores/settings.store";
+import type { BankAccount } from "../../../backend/src/contracts/banking";
 import { calculateInvoiceTotals } from "../../../backend/src/utils/tax-calculator";
 
 interface LineItem {
@@ -273,7 +275,17 @@ export default function InvoiceForm({ onSave }: Props) {
   const [hasSubmitted, setHasSubmitted] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
 
+  const [bankAccounts, setBankAccounts] = useState<BankAccount[]>([]);
+  useEffect(() => {
+    allBankingOptions((page) =>
+      api.listBankAccounts({ page: String(page), limit: "100", archived: "false" }),
+    )
+      .then(setBankAccounts)
+      .catch((err) => toast.error(formatApiError(err, t)));
+  }, [t]);
+
   const [form, setForm] = useState({
+    bank_account_id: undefined as string | null | undefined,
     customer_id: "",
     invoice_number: "",
     issue_date: todayIso(),
@@ -426,6 +438,7 @@ export default function InvoiceForm({ onSave }: Props) {
           return;
         }
         setForm({
+          bank_account_id: inv.bank_account_id ?? undefined,
           customer_id: inv.customer_id,
           invoice_number: inv.invoice_number,
           issue_date: inv.issue_date,
@@ -599,7 +612,12 @@ export default function InvoiceForm({ onSave }: Props) {
   // `f.currency === code` avoids a stale async response clobbering a newer pick.
   const handleCurrencyChange = (code: string) => {
     const isBase = code.toUpperCase() === baseCurrency.toUpperCase();
-    setForm((f) => ({ ...f, currency: code, exchange_rate: isBase ? 1 : f.exchange_rate }));
+    setForm((f) => ({
+      ...f,
+      currency: code,
+      bank_account_id: bankAccounts.find((a) => a.currency === code && a.is_default)?.id ?? null,
+      exchange_rate: isBase ? 1 : f.exchange_rate,
+    }));
     if (autoFetchRates && !isBase) {
       api
         .getExchangeRate(code, baseCurrency)
@@ -921,6 +939,45 @@ export default function InvoiceForm({ onSave }: Props) {
               onChange={(rate) => setForm((f) => ({ ...f, exchange_rate: rate }))}
               amount={total}
             />
+            <FormField label={t("banking.receiving_account")} hint={t("banking.invoice_hint")}>
+              <select
+                className="form-select"
+                value={
+                  form.bank_account_id === undefined ? "default" : form.bank_account_id || "none"
+                }
+                onChange={(e) =>
+                  setForm((f) => ({
+                    ...f,
+                    bank_account_id:
+                      e.target.value === "default"
+                        ? undefined
+                        : e.target.value === "none"
+                          ? null
+                          : e.target.value,
+                  }))
+                }
+              >
+                <option value="default">
+                  {isEdit ? t("banking.keep_current") : t("banking.default")}
+                  {!isEdit &&
+                    (bankAccounts.find((a) => a.currency === form.currency && a.is_default)
+                      ? ` — ${bankAccounts.find((a) => a.currency === form.currency && a.is_default)!.label}`
+                      : ` — ${t("banking.legacy")}`)}
+                </option>
+                <option value="none">{t("common.none")}</option>
+                {form.bank_account_id &&
+                  !bankAccounts.some((a) => a.id === form.bank_account_id) && (
+                    <option value={form.bank_account_id}>{t("banking.unavailable_account")}</option>
+                  )}
+                {bankAccounts
+                  .filter((a) => a.currency === form.currency)
+                  .map((a) => (
+                    <option key={a.id} value={a.id}>
+                      {a.label} — {a.bank_name} ({a.currency})
+                    </option>
+                  ))}
+              </select>
+            </FormField>
             <FormField label={t("invoices.locale")} hint={t("invoices.locale_hint")}>
               <select
                 value={form.locale}

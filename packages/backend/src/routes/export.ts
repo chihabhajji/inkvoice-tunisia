@@ -87,6 +87,11 @@ exportRoutes.get("/backup", (c) => {
     exported_at: new Date().toISOString(),
     data: {
       settings: settingsObj,
+      banks: db.query("SELECT * FROM banks").all(),
+      bank_accounts: db.query("SELECT * FROM bank_accounts").all(),
+      contacts: db.query("SELECT * FROM contacts").all(),
+      invoice_delivery_requests: db.query("SELECT * FROM invoice_delivery_requests").all(),
+      invoice_delivery_messages: db.query("SELECT * FROM invoice_delivery_messages").all(),
       customers,
       products,
       tax_definitions: taxDefinitions,
@@ -270,6 +275,8 @@ exportRoutes.post("/wipe", async (c) => {
   const db = getDb();
   // Order matters — child tables before parents to satisfy FKs.
   const wipeOrder = [
+    "invoice_delivery_messages",
+    "invoice_delivery_requests",
     "tt_time_entries",
     "tt_projects",
     "invoice_comments",
@@ -285,6 +292,9 @@ exportRoutes.post("/wipe", async (c) => {
     "recurring_invoices",
     "invoices",
     "quotes",
+    "contacts",
+    "bank_accounts",
+    "banks",
     "products",
     "tax_definitions",
     "customers",

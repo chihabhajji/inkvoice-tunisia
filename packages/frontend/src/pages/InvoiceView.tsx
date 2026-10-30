@@ -23,9 +23,9 @@ import { toast } from "sonner";
 import { api } from "@/api/client";
 import { ConsolidateInvoiceDialog } from "@/components/invoices/ConsolidateInvoiceDialog";
 import { EinvoicePanel } from "@/components/invoices/EinvoicePanel";
+import { InvoiceDeliveryPanel } from "@/components/invoices/InvoiceDeliveryDialog";
 import { PaymentHistory } from "@/components/invoices/PaymentHistory";
 import { RecordPaymentDialog } from "@/components/invoices/RecordPaymentDialog";
-import { SendInvoiceDialog } from "@/components/invoices/SendInvoiceDialog";
 import { TransmissionPanel } from "@/components/invoices/TransmissionPanel";
 import { Breadcrumbs } from "@/components/shared/Breadcrumbs";
 import { ConfirmDialog } from "@/components/shared/ConfirmDialog";
@@ -820,7 +820,10 @@ export default function InvoiceView({ onBack }: Props) {
       </Dialog>
 
       {/* Send Invoice Dialog */}
-      <SendInvoiceDialog
+      <InvoiceDeliveryPanel
+        key={id}
+        invoiceStatus={invoice.status}
+        paymentDetails={invoice.payment_details}
         open={sendDialogOpen}
         onOpenChange={setSendDialogOpen}
         invoiceId={id!}

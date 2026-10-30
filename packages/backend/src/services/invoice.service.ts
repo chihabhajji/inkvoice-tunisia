@@ -22,6 +22,12 @@ import {
   calculateLineItem,
   calculateLineItemTaxInclusive,
 } from "../utils/tax-calculator";
+import {
+  defaultAccount,
+  freezeInvoiceBank,
+  invoicePaymentDetails,
+  validateInvoiceAccount,
+} from "./banking.service";
 import { maybeAutoTransmit } from "./einvoice-transport.service";
 import { getBaseCurrency } from "./exchange-rate.service";
 import { applyLateFees } from "./late-fee.service";
@@ -58,6 +64,7 @@ interface InvoiceListParams extends InvoiceFilterParams {
 }
 
 interface CreateInvoiceData {
+  bank_account_id?: string | null;
   customer_id: string;
   issue_date: string;
   due_date?: string | null;
@@ -187,14 +194,17 @@ export function listInvoices(
      LEFT JOIN customers c ON i.customer_id = c.id
      ${where} ORDER BY i.created_at DESC LIMIT ? OFFSET ?`,
     )
-    .all(...queryParams, limit, offset) as (Invoice & { customer_name: string })[];
+    .all(...queryParams, limit, offset) as (Invoice & {
+    customer_name: string;
+    bank_snapshot: string | null;
+  })[];
 
   const tags = getTagsForItems(
     items.map((i) => i.id),
     "invoice",
   );
   const taggedItems: (Invoice & { customer_name: string; tags: string[] })[] = items.map(
-    (item) => ({
+    ({ bank_snapshot: _snapshot, ...item }) => ({
       ...item,
       tags: tags.get(item.id) ?? [],
     }),
@@ -289,8 +299,12 @@ export function getInvoice(id: string): InvoiceWithItems | null {
 
   const consolidation = getConsolidation(id) ?? undefined;
 
+  const { bank_snapshot: _snapshot, ...publicInvoice } = invoice as typeof invoice & {
+    bank_snapshot: string | null;
+  };
   return {
-    ...invoice,
+    ...publicInvoice,
+    payment_details: invoicePaymentDetails(id),
     items,
     consolidation,
     tags: getTagsForItem(id, "invoice"),
@@ -308,6 +322,11 @@ export function createInvoice(data: CreateInvoiceData): InvoiceWithItems {
   // Wrap in transaction for atomicity (prevents invoice number race condition)
   const id = db.transaction(() => {
     const invoiceId = crypto.randomBytes(16).toString("hex");
+    const accountId =
+      data.bank_account_id === undefined
+        ? defaultAccount(data.currency || "USD")
+        : data.bank_account_id;
+    validateInvoiceAccount(accountId, data.currency || "USD");
     // Use provided number, or generate a draft placeholder for new drafts
     const invoiceNumber = data.invoice_number || generateDraftNumber();
 
@@ -400,6 +419,11 @@ export function createInvoice(data: CreateInvoiceData): InvoiceWithItems {
       data.prices_include_tax ? 1 : 0,
       invoiceId,
     ]);
+    db.run("UPDATE invoices SET bank_account_id = ?, bank_snapshot = ? WHERE id = ?", [
+      accountId,
+      data.bank_account_id === null ? "{}" : null,
+      invoiceId,
+    ]);
     return invoiceId;
   })();
 
@@ -422,6 +446,13 @@ export function updateInvoice(id: string, data: CreateInvoiceData): InvoiceWithI
     cash_discount_days: number;
   } | null;
   if (!existing || existing.status !== "draft") return null;
+
+  const previousAccount = db.query("SELECT bank_account_id FROM invoices WHERE id = ?").get(id) as {
+    bank_account_id: string | null;
+  };
+  const accountId =
+    data.bank_account_id === undefined ? previousAccount.bank_account_id : data.bank_account_id;
+  validateInvoiceAccount(accountId, data.currency || "USD");
 
   // Cash-discount fields are optional on update: a field the client leaves
   // out keeps its stored value (older clients and the mobile app do not send
@@ -526,6 +557,12 @@ export function updateInvoice(id: string, data: CreateInvoiceData): InvoiceWithI
       data.prices_include_tax ? 1 : 0,
       id,
     ]);
+    if (data.bank_account_id !== undefined)
+      db.run("UPDATE invoices SET bank_account_id = ?, bank_snapshot = ? WHERE id = ?", [
+        accountId,
+        accountId === null ? "{}" : null,
+        id,
+      ]);
   })();
 
   if (data.tags) setItemTags(id, "invoice", data.tags);
@@ -733,6 +770,7 @@ export function markSent(id: string): InvoiceWithItems | null {
   // Assign a real sequential number if currently using a draft placeholder
   let assignedNumber: string | null = null;
   db.transaction(() => {
+    freezeInvoiceBank(id);
     if (isDraftNumber(existing.invoice_number)) {
       const MAX_RETRIES = 5;
       let assigned = false;
@@ -895,6 +933,7 @@ export function createConsolidated(data: CreateConsolidatedData): InvoiceWithIte
 
   const invoiceId = db.transaction(() => {
     const id = crypto.randomBytes(16).toString("hex");
+
     const number = generateDraftNumber();
 
     // Flatten items in source order, re-numbering sort_order across the merge.
@@ -982,6 +1021,10 @@ export function createConsolidated(data: CreateConsolidatedData): InvoiceWithIte
     );
     for (const source of sources) memberStmt.run(groupId, source.id);
 
+    db.run("UPDATE invoices SET bank_account_id = ? WHERE id = ?", [
+      defaultAccount(sources[0].currency),
+      id,
+    ]);
     return id;
   })();
 

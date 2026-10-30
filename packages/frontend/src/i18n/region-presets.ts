@@ -14,6 +14,13 @@ export interface RegionPreset {
 
 export const REGION_PRESETS: RegionPreset[] = [
   {
+    country: "TN",
+    label: "Tunisia",
+    currency: "TND",
+    locale: "en-US",
+    date_format: "dd/MM/yyyy",
+  },
+  {
     country: "TR",
     label: "Türkiye",
     currency: "TRY",

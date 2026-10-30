@@ -3,6 +3,7 @@ import { copyFileSync, existsSync, readdirSync, statSync, unlinkSync } from "nod
 import { basename, dirname, join } from "node:path";
 import { getEnv } from "../utils/env";
 import { logger } from "../utils/logger";
+import { migrateBanking } from "./banking-migration";
 import { getDb } from "./connection";
 
 interface Migration {
@@ -1137,6 +1138,17 @@ const MIGRATIONS: Migration[] = [
       `);
     },
   },
+  { version: 33, name: "banking_and_invoice_deliveries", up: migrateBanking },
+  {
+    version: 34,
+    name: "remove_contact_roles",
+    up: (db) => {
+      const columns = db.query("PRAGMA table_info(contacts)").all() as { name: string }[];
+      if (columns.some((column) => column.name === "role")) {
+        db.exec("ALTER TABLE contacts DROP COLUMN role");
+      }
+    },
+  },
 ];
 
 export const LATEST_MIGRATION_VERSION = MIGRATIONS[MIGRATIONS.length - 1].version;
@@ -1160,7 +1172,7 @@ function tableExists(db: Database, name: string): boolean {
 // Existing pre-versioning DBs already have all current columns; we mark every
 // known migration as applied so future boots only run new versions.
 function backfillExistingDb(db: Database): void {
-  for (const m of MIGRATIONS) {
+  for (const m of MIGRATIONS.filter((m) => m.version <= 32)) {
     db.run(`INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)`, [
       m.version,
       m.name,
@@ -1242,10 +1254,13 @@ export function runMigrations(): void {
       { version: LATEST_MIGRATION_VERSION },
       "Schema migrations backfilled (existing DB)",
     );
-    return;
   }
 
-  const currentVersion = appliedRow.v ?? 0;
+  const currentVersion =
+    appliedRow.cnt === 0 && tableExists(db, "customers")
+      ? ((db.query("SELECT MAX(version) AS v FROM schema_migrations").get() as { v: number | null })
+          .v ?? 0)
+      : (appliedRow.v ?? 0);
   const pending = MIGRATIONS.filter((m) => m.version > currentVersion);
 
   if (pending.length === 0) {

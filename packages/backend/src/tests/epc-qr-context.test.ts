@@ -105,12 +105,17 @@ describe("epc_qr template context", () => {
     expect(payload).toContain("EUR300.00");
   });
 
-  test("uses the account holder override when set, else the company name", () => {
+  test("preserves the issued holder while new invoices use the updated holder", () => {
     const invoice = newInvoice();
     expect(buildInvoiceContext(invoice.id)?.epc_qr?.payload).toContain("Pigon Tech GmbH");
 
     updateSettings({ company_account_holder: "Pigon Tech GmbH & Co. KG" });
-    expect(buildInvoiceContext(invoice.id)?.epc_qr?.payload).toContain("Pigon Tech GmbH & Co. KG");
+    expect(buildInvoiceContext(invoice.id)?.epc_qr?.payload).not.toContain(
+      "Pigon Tech GmbH & Co. KG",
+    );
+    expect(buildInvoiceContext(newInvoice().id)?.epc_qr?.payload).toContain(
+      "Pigon Tech GmbH & Co. KG",
+    );
   });
 
   test("references the invoice number so the payment can be reconciled", () => {

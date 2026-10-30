@@ -746,6 +746,12 @@ export default function Settings() {
               <FormField label={t("settings.tax_id")}>
                 <Input value={settings.company_tax_id || ""} onChange={set("company_tax_id")} />
               </FormField>
+              <p className="text-sm text-muted-foreground">
+                {t("banking.legacy_settings")}{" "}
+                <a className="underline" href="/banking">
+                  {t("banking.title")}
+                </a>
+              </p>
               <FormField label={t("settings.bank_details")} hint={t("settings.bank_details_hint")}>
                 <Textarea
                   value={settings.company_bank_details || ""}

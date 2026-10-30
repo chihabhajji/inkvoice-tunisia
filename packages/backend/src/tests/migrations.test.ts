@@ -145,6 +145,8 @@ describe("schema migration runner", () => {
         name TEXT NOT NULL
       );
       INSERT INTO customers (id, name) VALUES ('seed1', 'Pre-existing customer');
+      CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+      CREATE TABLE invoices (id TEXT PRIMARY KEY, status TEXT NOT NULL DEFAULT 'draft');
     `);
 
     runWith(db, () => runMigrations());
@@ -153,7 +155,10 @@ describe("schema migration runner", () => {
       .query("SELECT version, applied_at FROM schema_migrations ORDER BY version")
       .all() as { version: number; applied_at: string }[];
     expect(rows.length).toBe(LATEST_MIGRATION_VERSION);
-    expect(rows.every((r) => r.applied_at === "backfilled")).toBe(true);
+    expect(rows.filter((r) => r.version <= 32).every((r) => r.applied_at === "backfilled")).toBe(
+      true,
+    );
+    expect(rows.find((r) => r.version === 33)?.applied_at).not.toBe("backfilled");
 
     // Pre-existing data is preserved — backfill must not re-run migration #1.
     const cust = db.query("SELECT name FROM customers WHERE id = 'seed1'").get() as {
@@ -300,8 +305,29 @@ describe("schema migration runner", () => {
     ).toThrow();
   });
 
-  test("migrations reach version 32", () => {
-    expect(LATEST_MIGRATION_VERSION).toBe(32);
+  test("removing contact roles preserves details and bank associations", () => {
+    runWith(db, () => runMigrations());
+    db.exec("ALTER TABLE contacts ADD COLUMN role TEXT NOT NULL DEFAULT 'accountant'");
+    db.exec("DELETE FROM schema_migrations WHERE version = 34");
+    db.exec("INSERT INTO banks (id, name) VALUES ('bank-1', 'Bank')");
+    db.exec(`INSERT INTO contacts (id, name, email, phone, bank_id, role, archived)
+      VALUES ('contact-1', 'Alex', 'alex@example.com', '00123', 'bank-1', 'bank_manager', 1)`);
+    runWith(db, () => runMigrations());
+    const row = db.query("SELECT * FROM contacts WHERE id = 'contact-1'").get();
+    expect(row).toMatchObject({
+      name: "Alex",
+      email: "alex@example.com",
+      phone: "00123",
+      bank_id: "bank-1",
+      archived: 1,
+    });
+    expect(row).not.toHaveProperty("role");
+    runWith(db, () => runMigrations());
+    expect(db.query("SELECT * FROM contacts WHERE id = 'contact-1'").get()).toEqual(row);
+  });
+
+  test("migrations reach version 34", () => {
+    expect(LATEST_MIGRATION_VERSION).toBe(34);
   });
 
   test("customer_payment_methods has the expected shape", () => {

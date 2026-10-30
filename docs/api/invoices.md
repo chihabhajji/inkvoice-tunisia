@@ -127,11 +127,30 @@ POST /api/v1/invoices/:id/mark-sent
 
 Marks a draft invoice as sent without emailing.
 
+## Banking and saved recipients
+
+Invoices accept an optional `bank_account_id` and preserve payment instructions when issued.
+Use the [banking and delivery API](banking.md) for saved contacts, private copies, explicit CC,
+retry-safe sends, and sending history.
+
 ## Send by Email
 
 ```
 POST /api/v1/invoices/:id/send
 ```
+
+The optional `cc` field accepts an array of email addresses:
+
+```json
+{
+  "cc": ["colleague@example.com", "accounts@example.com"]
+}
+```
+
+CC addresses are visible to all recipients. Omit `cc` or use `[]` to send without
+copies. Addresses are trimmed and validated; invalid values return `400` before
+the document is published or marked as sent. CC applies only to this send.
+
 
 Sends the invoice to the customer via email. Requires SMTP configuration.
 

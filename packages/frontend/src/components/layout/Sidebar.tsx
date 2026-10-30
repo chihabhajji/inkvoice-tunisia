@@ -1,9 +1,11 @@
 import {
   BarChart3,
   ClipboardList,
+  ContactRound,
   FileCheck2,
   FileText,
   History,
+  Landmark,
   LayoutDashboard,
   LogOut,
   Monitor,
@@ -85,6 +87,8 @@ export function Sidebar({ collapsed }: { collapsed?: boolean }) {
   ];
 
   const adminItems = [
+    { to: "/contacts", icon: ContactRound, label: t("contacts.title") },
+    { to: "/banking", icon: Landmark, label: t("banking.title") },
     { to: "/settings", icon: Settings, label: t("nav.settings") },
     { to: "/users", icon: UserCog, label: t("nav.users") },
     { to: "/activity", icon: History, label: t("nav.activity") },

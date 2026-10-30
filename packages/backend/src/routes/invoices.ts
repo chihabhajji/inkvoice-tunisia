@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import { Hono } from "hono";
 import { z } from "zod";
+import { deliveryInput } from "../contracts/banking";
 import { getDb } from "../database/connection";
 import { hasPermission, requirePermission } from "../middleware/auth";
 import { logActivity } from "../services/activity.service";
@@ -12,6 +13,7 @@ import {
   listEinvoiceRecords,
 } from "../services/einvoice.service";
 import * as invoiceService from "../services/invoice.service";
+import { deliverInvoice, listDeliveries } from "../services/invoice-delivery.service";
 import { sendInvoiceEmail } from "../services/invoice-send.service";
 import { dispatchEvent } from "../services/outgoing-webhooks.service";
 import * as paymentService from "../services/payment.service";
@@ -240,6 +242,7 @@ const itemSchema = z.object({
 });
 
 const invoiceSchema = z.object({
+  bank_account_id: z.string().min(1).nullable().optional(),
   customer_id: z.string().min(1),
   issue_date: z.string().min(1),
   due_date: z.string().optional().nullable(),
@@ -454,11 +457,40 @@ invoices.get("/:id/credit-notes", requirePermission("invoices", "read"), (c) => 
   return c.json({ success: true, data: creditNotes });
 });
 
+invoices.get("/:id/deliveries", requirePermission("invoices", "read"), (c) => {
+  const { page, limit } = z
+    .object({
+      page: z.coerce.number().int().min(1).default(1),
+      limit: z.coerce.number().int().min(1).max(100).default(20),
+    })
+    .parse(c.req.query());
+  return c.json({ success: true, data: listDeliveries(c.req.param("id"), page, limit) });
+});
+invoices.post("/:id/deliveries", requirePermission("invoices", "publish"), async (c) => {
+  const key = z.string().min(1).max(200).parse(c.req.header("Idempotency-Key"));
+  const input = deliveryInput.parse(await c.req.json());
+  return c.json(
+    {
+      success: true,
+      data: await deliverInvoice(
+        c.req.param("id"),
+        input,
+        key,
+        c.get("user")!.sub,
+        c.req.header("origin"),
+      ),
+    },
+    201,
+  );
+});
+
 // Send invoice via email
 invoices.post("/:id/send", requirePermission("invoices", "publish"), async (c) => {
   const body = await c.req.json().catch(() => ({}));
+  const { cc } = z.object({ cc: z.array(z.string().trim().email()).optional() }).parse(body);
   const result = await sendInvoiceEmail(c.req.param("id"), {
     to: typeof body.to === "string" ? body.to : undefined,
+    cc,
     subject: typeof body.subject === "string" ? body.subject : undefined,
     message: typeof body.message === "string" ? body.message : undefined,
     from: typeof body.from === "string" ? body.from : undefined,
