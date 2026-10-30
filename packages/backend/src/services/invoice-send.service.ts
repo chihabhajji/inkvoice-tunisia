@@ -2,13 +2,14 @@ import { formatCurrency } from "../utils/currency";
 import { getEnv } from "../utils/env";
 import { logger } from "../utils/logger";
 import { emitEinvoice } from "./einvoice.service";
-import { isEmailConfigured, sendEmail } from "./email.service";
+import { isEmailConfigured, type MailResult, sendEmail } from "./email.service";
 import { invoiceDeliveryEmail } from "./email-templates";
 import * as invoiceService from "./invoice.service";
 import { getAllSettings } from "./settings.service";
 
 export interface SendInvoiceOptions {
   to?: string;
+  cc?: string[];
   subject?: string;
   message?: string;
   from?: string;
@@ -19,8 +20,13 @@ export interface SendInvoiceOptions {
 }
 
 export type SendInvoiceResult =
-  | { success: true }
-  | { success: false; error: string; status: 400 | 404 | 502 };
+  | Extract<MailResult, { success: true }>
+  | {
+      success: false;
+      error: string;
+      status: 400 | 404 | 502;
+      delivery_state?: "failed" | "unknown";
+    };
 
 /**
  * Public origin for share links. A live request's origin wins, otherwise fall
@@ -107,6 +113,7 @@ export async function sendInvoiceEmail(
 
   const result = await sendEmail({
     to: customerEmail,
+    cc: opts.cc,
     subject: opts.subject || email.subject,
     html: email.html,
     text: email.text,
@@ -122,8 +129,8 @@ export async function sendInvoiceEmail(
       msg === "SMTP is not configured" || lower.includes("recipient") || lower.includes("address")
         ? 400
         : 502;
-    return { success: false, error: msg, status };
+    return { success: false, error: msg, status, delivery_state: result.delivery_state };
   }
 
-  return { success: true };
+  return result;
 }

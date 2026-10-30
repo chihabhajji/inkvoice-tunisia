@@ -1,10 +1,10 @@
 import { getDb } from "../database/connection";
+import { invoiceBankSettings } from "../services/banking.service";
 import { getAllSettings } from "../services/settings.service";
 import type { XmlInvoiceData, XmlLineItem, XmlTaxBreakdown } from "./types";
 
 export function buildXmlInvoiceData(invoiceId: string): XmlInvoiceData {
   const db = getDb();
-  const settings = getAllSettings();
 
   const invoice = db
     .query(`
@@ -22,6 +22,7 @@ export function buildXmlInvoiceData(invoiceId: string): XmlInvoiceData {
     .get(invoiceId) as Record<string, unknown>;
 
   if (!invoice) throw new Error("Invoice not found");
+  const settings = invoiceBankSettings(invoiceId, getAllSettings());
 
   const rawItems = db
     .query(`

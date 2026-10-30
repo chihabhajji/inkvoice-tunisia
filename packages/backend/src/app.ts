@@ -14,6 +14,7 @@ import { pluginsAdminRoutes } from "./plugins/routes";
 import { activity } from "./routes/activity";
 import { apiTokens } from "./routes/api-tokens";
 import { auth } from "./routes/auth";
+import { bankAccounts, banks, contacts } from "./routes/banking";
 import { customers } from "./routes/customers";
 import { dashboard } from "./routes/dashboard";
 import { deviceSessions } from "./routes/device-sessions";
@@ -155,6 +156,9 @@ export function createApp(options?: CreateAppOptions): Hono {
   app.use("/api/v1/outgoing-webhooks/*", adminOnly);
   app.use("/api/v1/outgoing-webhooks", adminOnly);
 
+  app.route("/api/v1/banks", banks);
+  app.route("/api/v1/bank-accounts", bankAccounts);
+  app.route("/api/v1/contacts", contacts);
   app.route("/api/v1/invoices", invoices);
   app.route("/api/v1/einvoices", einvoices);
   app.route("/api/v1/quotes", quotes);

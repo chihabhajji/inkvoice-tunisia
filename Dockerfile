@@ -18,6 +18,10 @@ RUN cd packages/frontend && bun run build
 # Production image
 FROM oven/bun:1-slim
 
+# Use the same HTML invoice templates for private email PDF attachments.
+RUN apt-get update && apt-get install -y --no-install-recommends chromium fonts-dejavu-core fonts-noto-core fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
+ENV CHROMIUM_EXECUTABLE_PATH=/usr/bin/chromium
+
 WORKDIR /app
 
 # Copy package files and install production deps only

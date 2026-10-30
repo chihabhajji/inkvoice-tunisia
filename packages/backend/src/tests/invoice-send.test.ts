@@ -1,12 +1,17 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import crypto from "node:crypto";
 import { unlinkSync } from "node:fs";
+import nodemailer from "nodemailer";
+import { createApp } from "../app";
 import { closeDatabase, getDb, initDatabase } from "../database/connection";
 import { runMigrations } from "../database/migrations";
 import { seed } from "../database/seed";
+import { setTenantSmtpResolver } from "../services/email.service";
 import { createInvoice, finaliseForSending } from "../services/invoice.service";
 import { resolvePublicOrigin, sendInvoiceEmail } from "../services/invoice-send.service";
+import { createQuote } from "../services/quote.service";
 import { resetEnvCache } from "../utils/env";
+import { signToken } from "../utils/jwt";
 
 const TEST_DB = "./data/test-invoice-send.db";
 let customerId: string;
@@ -155,4 +160,75 @@ describe("sendInvoiceEmail", () => {
     const result = await sendInvoiceEmail(inv.id);
     expect(result).toEqual({ success: false, error: "No recipient email address", status: 400 });
   });
+});
+
+describe("CC recipients", () => {
+  for (const resource of ["invoices"] as const) {
+    async function draftAndRequest(cc: unknown) {
+      const create = resource === "invoices" ? createInvoice : createQuote;
+      const draft = create({
+        customer_id: customerId,
+        issue_date: "2026-09-04",
+        items: [{ description: "Work", quantity: 1, unit_price: 100 }],
+      });
+      const admin = getDb().query("SELECT id FROM users WHERE username = 'admin'").get() as {
+        id: string;
+      };
+      const token = await signToken({ sub: admin.id, username: "admin", is_admin: true });
+      const response = await createApp().request(`/api/v1/${resource}/${draft.id}/send`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ cc, attach_einvoice: false }),
+      });
+      return { draft, response };
+    }
+
+    test.each([
+      ["one recipient", ["copy@example.com"], ["copy@example.com"]],
+      [
+        "multiple recipients with whitespace",
+        [" copy@example.com ", "accounts@example.com"],
+        ["copy@example.com", "accounts@example.com"],
+      ],
+      ["omitted CC", undefined, undefined],
+      ["empty CC", [], []],
+    ])(`${resource}: delivers with %s`, async (_label, cc, expected) => {
+      const transport = nodemailer.createTransport({ jsonTransport: true });
+      const createTransport = spyOn(nodemailer, "createTransport").mockReturnValue(transport);
+      const sendMail = spyOn(transport, "sendMail");
+      setTenantSmtpResolver(async () => ({
+        host: "smtp.test.invalid",
+        port: 465,
+        secure: true,
+        fromAddress: "billing@example.com",
+      }));
+      try {
+        const { response } = await draftAndRequest(cc);
+        expect(response.status).toBe(200);
+        expect(sendMail).toHaveBeenCalledTimes(1);
+        expect(sendMail.mock.calls[0][0]).toMatchObject({ to: "billing@send.test", cc: expected });
+      } finally {
+        sendMail.mockRestore();
+        createTransport.mockRestore();
+        setTenantSmtpResolver(null);
+        transport.close();
+      }
+    });
+
+    test.each([
+      ["malformed address", ["not-an-email"]],
+      ["mixed valid and invalid addresses", ["copy@example.com", "bad"]],
+      ["header injection", ["copy@example.com\r\nBcc: hidden@example.com"]],
+      ["string instead of array", "copy@example.com"],
+      ["non-string recipient", [42]],
+      ["null", null],
+    ])(`${resource}: rejects %s without publishing`, async (_label, cc) => {
+      const { draft, response } = await draftAndRequest(cc);
+      expect(response.status).toBe(400);
+      expect(await response.json()).toMatchObject({ code: "VALIDATION_FAILED" });
+      expect(
+        getDb().query(`SELECT status, is_published FROM ${resource} WHERE id = ?`).get(draft.id),
+      ).toEqual({ status: "draft", is_published: 0 });
+    });
+  }
 });

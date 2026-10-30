@@ -33,6 +33,8 @@ const PATH_KEY: Record<string, string> = {
   products: "nav.products",
   reports: "nav.reports",
   settings: "nav.settings",
+  banking: "banking.title",
+  contacts: "contacts.title",
   users: "nav.users",
   activity: "nav.activity",
   templates: "nav.templates",

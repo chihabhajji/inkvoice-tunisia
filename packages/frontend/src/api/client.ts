@@ -1,3 +1,15 @@
+import type {
+  AccountInput,
+  Bank,
+  BankAccount,
+  BankInput,
+  Contact,
+  ContactInput,
+  DeliveryInput,
+  InvoiceDelivery,
+} from "../../../backend/src/contracts/banking";
+import type { PaginatedResponse } from "../../../backend/src/types/common";
+
 const API_BASE = "/api/v1";
 
 let authToken: string | null = null;
@@ -115,6 +127,44 @@ export class ApiError extends Error {
 }
 
 export const api = {
+  listBanks: (params: Record<string, string> = {}) =>
+    request<{ success: boolean; data: PaginatedResponse<Bank> }>(
+      `/banks?${new URLSearchParams(params)}`,
+    ),
+  saveBank: (data: Partial<BankInput>, id?: string) =>
+    request<{ success: boolean; data: Bank }>(id ? `/banks/${id}` : "/banks", {
+      method: id ? "PATCH" : "POST",
+      body: JSON.stringify(data),
+    }),
+  listBankAccounts: (params: Record<string, string> = {}) =>
+    request<{ success: boolean; data: PaginatedResponse<BankAccount> }>(
+      `/bank-accounts?${new URLSearchParams(params)}`,
+    ),
+  saveBankAccount: (data: Partial<AccountInput>, id?: string) =>
+    request<{ success: boolean; data: BankAccount }>(
+      id ? `/bank-accounts/${id}` : "/bank-accounts",
+      { method: id ? "PATCH" : "POST", body: JSON.stringify(data) },
+    ),
+  listContacts: (params: Record<string, string> = {}) =>
+    request<{ success: boolean; data: PaginatedResponse<Contact> }>(
+      `/contacts?${new URLSearchParams(params)}`,
+    ),
+  saveContact: (data: Partial<ContactInput>, id?: string) =>
+    request<{ success: boolean; data: Contact }>(id ? `/contacts/${id}` : "/contacts", {
+      method: id ? "PATCH" : "POST",
+      body: JSON.stringify(data),
+    }),
+  invoiceDeliveries: (id: string, page = 1) =>
+    request<{ success: boolean; data: PaginatedResponse<InvoiceDelivery> }>(
+      `/invoices/${id}/deliveries?page=${page}`,
+    ),
+  deliverInvoice: (id: string, data: DeliveryInput, key: string) =>
+    request<{ success: boolean; data: InvoiceDelivery }>(`/invoices/${id}/deliveries`, {
+      method: "POST",
+      headers: { "Idempotency-Key": key },
+      body: JSON.stringify(data),
+    }),
+
   // Auth
   login: (username: string, password: string) =>
     request<{
@@ -353,6 +403,7 @@ export const api = {
     id: string,
     data?: {
       to?: string;
+      cc?: string[];
       subject?: string;
       message?: string;
       from?: string;

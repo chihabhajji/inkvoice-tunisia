@@ -1,9 +1,12 @@
+import type { PaymentDetails } from "../contracts/banking";
 export type InvoiceType = "invoice" | "credit_note";
 
 export interface Invoice {
   id: string;
   invoice_number: string;
   customer_id: string;
+  bank_account_id: string | null;
+  payment_details?: PaymentDetails;
   status: InvoiceStatus;
   type: InvoiceType;
   reference_invoice_id: string | null;

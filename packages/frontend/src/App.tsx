@@ -33,6 +33,8 @@ const PublicQuote = lazy(() => import("@/pages/PublicQuote"));
 const RecurringInvoiceForm = lazy(() => import("@/pages/RecurringInvoiceForm"));
 const RecurringInvoices = lazy(() => import("@/pages/RecurringInvoices"));
 const Reports = lazy(() => import("@/pages/Reports"));
+const Contacts = lazy(() => import("@/pages/Contacts"));
+const Banking = lazy(() => import("@/pages/Banking"));
 const Settings = lazy(() => import("@/pages/Settings"));
 const Users = lazy(() => import("@/pages/Users"));
 const ClientPortal = lazy(() => import("@/pages/ClientPortal"));
@@ -332,6 +334,22 @@ function App() {
                 element={
                   <AdminRoute>
                     <Settings />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/contacts"
+                element={
+                  <AdminRoute>
+                    <Contacts />
+                  </AdminRoute>
+                }
+              />
+              <Route
+                path="/banking"
+                element={
+                  <AdminRoute>
+                    <Banking />
                   </AdminRoute>
                 }
               />

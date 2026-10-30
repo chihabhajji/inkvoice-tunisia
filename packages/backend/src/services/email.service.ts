@@ -51,6 +51,9 @@ async function buildTransporter(cfg: ResolvedSmtp): Promise<Transporter> {
     port: cfg.port,
     secure: cfg.secure,
     requireTLS: cfg.requireTLS,
+    connectionTimeout: 30000,
+    greetingTimeout: 30000,
+    socketTimeout: 60000,
     auth: cfg.user ? { user: cfg.user, pass: cfg.pass } : undefined,
   });
 }
@@ -103,8 +106,13 @@ export async function isEmailConfigured(): Promise<boolean> {
   return !!cfg;
 }
 
+export type MailResult =
+  | { success: true; accepted?: string[]; rejected?: string[]; message_id?: string }
+  | { success: false; error: string; delivery_state?: "failed" | "unknown" };
+
 export async function sendEmail(opts: {
   to: string;
+  cc?: string[];
   subject: string;
   html: string;
   text?: string;
@@ -114,22 +122,23 @@ export async function sendEmail(opts: {
   replyTo?: string;
   /** Attachments (e.g. ZUGFeRD hybrid PDF or XRechnung XML). */
   attachments?: Array<{ filename: string; content: Buffer | Uint8Array; contentType: string }>;
-}): Promise<{ success: true } | { success: false; error: string }> {
-  const result = await getTransporterForActiveContext();
-  if (!result) {
-    return { success: false, error: "SMTP is not configured" };
-  }
-
-  const { transporter, cfg } = result;
-  const from =
-    opts.from ||
-    (cfg.fromName ? `"${cfg.fromName}" <${cfg.fromAddress}>` : cfg.fromAddress) ||
-    cfg.user;
-
+}): Promise<MailResult> {
   try {
-    await transporter.sendMail({
+    const result = await getTransporterForActiveContext();
+    if (!result) {
+      return { success: false, error: "SMTP is not configured", delivery_state: "failed" };
+    }
+
+    const { transporter, cfg } = result;
+    const from =
+      opts.from ||
+      (cfg.fromName ? `"${cfg.fromName}" <${cfg.fromAddress}>` : cfg.fromAddress) ||
+      cfg.user;
+
+    const info = await transporter.sendMail({
       from,
       to: opts.to,
+      cc: opts.cc,
       subject: opts.subject,
       html: opts.html,
       text: opts.text,
@@ -140,9 +149,23 @@ export async function sendEmail(opts: {
         contentType: a.contentType,
       })),
     });
-    return { success: true };
+    const addresses = (values: unknown): string[] =>
+      Array.isArray(values) ? values.filter((v): v is string => typeof v === "string") : [];
+    return {
+      success: true,
+      accepted: addresses(info.accepted),
+      rejected: addresses(info.rejected),
+      message_id: info.messageId,
+    };
   } catch (err) {
-    return { success: false, error: err instanceof Error ? err.message : "Failed to send email" };
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : "Failed to send email",
+      delivery_state:
+        typeof (err as { responseCode?: unknown })?.responseCode === "number"
+          ? "failed"
+          : "unknown",
+    };
   }
 }
 

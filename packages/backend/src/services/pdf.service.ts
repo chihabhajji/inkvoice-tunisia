@@ -6,6 +6,7 @@ import { formatCurrency } from "../utils/currency";
 import { buildEpcPayload } from "../utils/epc-qr";
 import { escapeMultiline } from "../utils/html";
 import { qrToDataUri } from "../utils/qr-code";
+import { invoiceBankSettings } from "./banking.service";
 import { getInvoice } from "./invoice.service";
 import { listPayments } from "./payment.service";
 import { getQuote } from "./quote.service";
@@ -109,7 +110,7 @@ export function buildInvoiceContext(invoiceId: string) {
   const invoice = getInvoice(invoiceId);
   if (!invoice) return null;
 
-  const settings = getAllSettings();
+  const settings = invoiceBankSettings(invoiceId, getAllSettings());
   const db = getDb();
   const customer = db
     .query("SELECT * FROM customers WHERE id = ?")
