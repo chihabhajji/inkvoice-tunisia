@@ -9,6 +9,7 @@ async function getBrowser(): Promise<Browser> {
     const executablePath =
       process.env.CHROMIUM_EXECUTABLE_PATH ||
       [
+        chromium.executablePath(),
         "/usr/bin/chromium",
         "/usr/bin/chromium-browser",
         "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",

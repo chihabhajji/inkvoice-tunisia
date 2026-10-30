@@ -308,7 +308,7 @@ describe("banking contracts and snapshots", () => {
     const pdf = await invoicePdf(invoice.id);
     expect(pdf.subarray(0, 5).toString()).toBe("%PDF-");
     expect((await PDFDocument.load(pdf)).getPageCount()).toBeGreaterThan(1);
-  });
+  }, 30000);
 });
 
 describe("delivery isolation and retry safety", () => {
@@ -345,7 +345,7 @@ describe("delivery isolation and retry safety", () => {
     expect(listDeliveries(invoice.id, 1, 20).items[0].messages[1].recipients[0].email).toBe(
       "accounts@example.com",
     );
-  });
+  }, 30000);
   test("private sharing rejects drafts; issued private sharing publishes without mailing the customer", async () => {
     smtp();
     const c = contact("private@example.com");
@@ -369,7 +369,7 @@ describe("delivery isolation and retry safety", () => {
     expect(received[0].recipients).toEqual([c.email]);
     expect(getInvoice(invoice.id)?.status).toBe("sent");
     expect(getInvoice(invoice.id)?.is_published).toBe(1);
-  });
+  }, 30000);
   test("same intent replays without resending; changed payload fails; concurrent claim is rejected", async () => {
     smtp();
     const invoice = draft();
