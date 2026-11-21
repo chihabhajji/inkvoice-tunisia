@@ -100,6 +100,41 @@ function buildEpcQrContext(
   }
 }
 
+/**
+ * One short label for what the invoice covers, for templates that show it per
+ * line: "November 2026" for a whole calendar month, else "start – end" in the
+ * document's date format, or the single service date. Null when none is set.
+ */
+function servicePeriodLabel(
+  invoice: {
+    service_date: string | null;
+    service_period_start: string | null;
+    service_period_end: string | null;
+  },
+  locale: string,
+  dateFormat: string | undefined,
+  localeOverride: string | undefined,
+): string | null {
+  const { service_date, service_period_start: start, service_period_end: end } = invoice;
+  if (start && end) {
+    const [y, m, d] = start.split("-").map(Number);
+    const lastDay = new Date(Date.UTC(y, m, 0)).getUTCDate();
+    if (d === 1 && end === `${start.slice(0, 8)}${String(lastDay).padStart(2, "0")}`) {
+      try {
+        return new Intl.DateTimeFormat(locale, {
+          month: "long",
+          year: "numeric",
+          timeZone: "UTC",
+        }).format(new Date(Date.UTC(y, m - 1, 1)));
+      } catch {
+        // Unknown locale: fall through to the plain range.
+      }
+    }
+    return `${formatDateStr(start, dateFormat, localeOverride)} – ${formatDateStr(end, dateFormat, localeOverride)}`;
+  }
+  return service_date ? formatDateStr(service_date, dateFormat, localeOverride) : null;
+}
+
 function resolveCountryName(countryCode: string | null | undefined, locale: string): string | null {
   const code = (countryCode || "").trim();
   if (!code) return null;
@@ -181,6 +216,7 @@ export function buildInvoiceContext(invoiceId: string) {
             end: formatDateStr(invoice.service_period_end, dateFormat, localeOverride),
           }
         : null,
+    service_period_label: servicePeriodLabel(invoice, locale, dateFormat, localeOverride),
     status: invoice.status,
     company: {
       name: settings.company_name || "",
