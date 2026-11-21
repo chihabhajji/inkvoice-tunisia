@@ -27,6 +27,9 @@ These tokens are available to anything rendered by `pdf.service.ts` (the PDF rou
 | `{{invoice_number}}`   | string          | The document number. For quotes, this contains the `quote_number` so the same template renders both. |
 | `{{issue_date}}`       | string          | Already locale-formatted (`Intl.DateTimeFormat` or `date_format` setting).                   |
 | `{{due_date}}`         | string \| null  | Locale-formatted. Empty for quotes (use `{{#due_date}}…{{/due_date}}` to hide when absent).  |
+| `{{service_date}}`         | string \| null | Locale-formatted date of supply, when one date is set. |
+| `{{service_period}}`       | object \| null | `{start, end}`, locale-formatted, when a period is set. |
+| `{{service_period_label}}` | string \| null | One short label for either: `November 2026` for a whole calendar month, else `start – end` or the single date. Fits a per-line "Period" column; gate the column with `{{#service_period_label}}`. |
 | `{{status}}`           | string          | `draft`, `sent`, `paid`, `overdue`, `voided`, etc.                                          |
 | `{{document_title}}`   | string          | `Quote` for quotes; absent for invoices (defaults handled in template).                     |
 | `{{is_quote}}`         | boolean         | True only on quotes — handy for `{{#is_quote}}…{{/is_quote}}`.                              |
