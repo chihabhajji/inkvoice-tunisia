@@ -181,6 +181,23 @@ describe("service date API", () => {
 });
 
 describe("service date output", () => {
+  test("service_period_label names a whole month, else the range or date", () => {
+    const label = (fields: Record<string, string>) =>
+      buildInvoiceContext(createInvoice({ ...base(), ...fields }).id)!.service_period_label;
+
+    expect(label({ service_period_start: "2026-11-01", service_period_end: "2026-11-30" })).toBe(
+      "November 2026",
+    );
+    expect(label({ service_period_start: "2028-02-01", service_period_end: "2028-02-29" })).toBe(
+      "February 2028",
+    );
+    const partial = label({ service_period_start: "2026-11-01", service_period_end: "2026-11-15" });
+    expect(partial).toContain(" – ");
+    expect(partial).not.toBe("November 2026");
+    expect(label({ service_date: "2026-11-15" })).toBeTruthy();
+    expect(label({})).toBeNull();
+  });
+
   test("every built-in template prints the date and the period", () => {
     const single = createInvoice({ ...base(), service_date: "2026-10-31" });
     const period = createInvoice({
